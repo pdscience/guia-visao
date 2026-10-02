@@ -266,11 +266,22 @@ async function startLive(){
 
     if(!S.modelReady){
       setChip('CARREGANDO MODELO');
-      if(!window.cocoSsd) throw new Error('tf');
-      S.model = await cocoSsd.load({base:'lite_mobilenet_v2'});
-      S.modelReady = true;
-      logEvent('IA','modelo COCO-SSD carregado');
-      toast('Visão computacional pronta');
+      try{
+        if(!window.cocoSsd) throw new Error('tf');
+        S.model = await cocoSsd.load({base:'lite_mobilenet_v2'});
+        S.modelReady = true;
+        logEvent('IA','modelo COCO-SSD carregado');
+        toast('Visão computacional pronta');
+      }catch(loadErr){
+        console.warn(loadErr);
+        if(!navigator.onLine){
+          setChip('SEM MODELO');
+          speak('Modelo ainda não baixado. Conecte uma vez à internet. Iniciando demonstração.', true);
+          logEvent('IA','modelo sem cache, fallback simulação','#FF4E3E');
+          if(S.running){ startSim(); return; }
+        }
+        throw loadErr;
+      }
     }
     if(!S.running) return;
     setChip('DETECTANDO');

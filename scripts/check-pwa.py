@@ -17,4 +17,11 @@ try:
 except Exception as e:
     manifest_err = str(e)
 print("MANIFEST:", "OK" if not manifest_err else f"FAIL: {manifest_err}")
-sys.exit(1 if bad or missing or manifest_err else 0)
+# Task 4: modelo cacheado + fallback sem-modelo
+sw = (root/"sw.js").read_text()
+appjs = (root/"js/app.js").read_text()
+model_ok = "guia-visao-model-v1" in sw
+fallback_ok = "SEM MODELO" in appjs and "startSim(); return" in appjs
+print("MODEL-CACHE:", "OK" if model_ok else "FAIL: sw.js sem guia-visao-model-v1")
+print("FALLBACK:", "OK" if fallback_ok else "FAIL: js/app.js sem fallback SEM MODELO")
+sys.exit(1 if bad or missing or manifest_err or not model_ok or not fallback_ok else 0)
