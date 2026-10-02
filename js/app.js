@@ -635,3 +635,10 @@ setTimeout(()=>{
 
 // debug handle (offline shell; sem alterar lógica)
 window.GuiaVisao = { S };
+
+/* ---------- PWA: service worker + offline (Task 3, append-only) ---------- */
+if('serviceWorker' in navigator){window.addEventListener('load',()=>{navigator.serviceWorker.register('./sw.js').then(r=>{r.onupdatefound=()=>{const n=r.installing;n.onstatechange=()=>{if(n.state==='installed'&&navigator.serviceWorker.controller){window.__SW_UPDATE__=true;toast('Nova versão disponível — recarregue');}};};}).catch(()=>{});});}
+function setOfflineUI(off){S.offline=off;const c=$('#chipOffline');if(c)c.classList.toggle('hidden',!off);}
+setOfflineUI(!navigator.onLine);
+window.addEventListener('offline',()=>{setOfflineUI(true);$('#liveStatus').textContent='Modo offline. Detecção usa modelo em cache.';toast('MODO OFFLINE — usando cache');});
+window.addEventListener('online',()=>{setOfflineUI(false);toast('Conexão restaurada');});

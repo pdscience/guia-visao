@@ -93,13 +93,14 @@
       </header>
 
       <!-- status chip -->
-      <div class="absolute top-[max(4.6rem,calc(env(safe-area-inset-top)+3.4rem))] md:top-28 inset-x-0 z-30 flex justify-center pointer-events-none">
+      <div class="absolute top-[max(4.6rem,calc(env(safe-area-inset-top)+3.4rem))] md:top-28 inset-x-0 z-30 flex flex-col items-center gap-2 pointer-events-none">
         <div class="chip font-mono text-white/75">
           <span class="dot"></span>
           <span id="chipStatus">PRONTO</span>
           <span class="text-white/25">|</span>
           <span id="chipFps" class="text-white/40">-- FPS</span>
         </div>
+        <span id="chipOffline" class="chip font-mono !text-[10px] !text-[#FFC53D] !border-[#FFC53D]/40 hidden">MODO OFFLINE</span>
       </div>
 
       <!-- idle empty state -->
@@ -226,7 +227,7 @@
       <div id="backdrop"></div>
 
       <!-- toast -->
-      <div id="toast" class="chip font-mono !text-[10.5px] text-white/85 !bg-[#0e1016]/90"></div>
+      <div id="toast" class="chip font-mono !text-[10.5px] text-white/85 !bg-[#0e1016]/90" role="status" aria-live="polite"></div>
 
       <!-- ================= INTRO ================= -->
       <div id="intro" class="absolute inset-0 z-[90] bg-[#07080d] flex flex-col" tabindex="-1" role="dialog" aria-modal="true" aria-label="Bem-vindo ao Guia Visão. Toque em qualquer lugar para ativar a câmera com voz.">
