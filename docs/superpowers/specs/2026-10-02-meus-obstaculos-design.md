@@ -16,14 +16,14 @@ O detector atual (COCO-SSD) tem vocabulário fixo de 80 classes; uma lista está
 
 ## 4. Cadastro — Seção 1 (aprovada)
 - Tela "Meus obstáculos" em Ajustes: lista (nome + nº fotos + Ouvir teste + Apagar) + botão Novo.
-- Modo ajudante (visual): digita o nome, segura o celular, app captura 10 fotos sozinho (1/s com bipes).
-- Modo cego (guiado por voz): escolhe nome por voz em lista pronta (portão, escada, porta, muro, janela + personalizado ditado pelo ajudante depois); app instrui ("aponte para o obstáculo, vou fotografar, mexa um pouco o celular") com contagem falada e bipes.
-- Mínimo 10 fotos por obstáculo; máximo 8 obstáculos (limite IDB/CPU declarado).
+- Modo ajudante (visual): digita o nome, segura o celular, app captura sozinho em 2 fases: fase 1 — 5 fotos do fundo (apontado para outro lugar, sem o obstáculo, 1/s com bipes); fase 2 — 10 fotos do obstáculo (1/s com bipes).
+- Modo cego (guiado por voz): escolhe nome por voz em lista pronta (portão, escada, porta, muro, janela + personalizado ditado pelo ajudante depois); app instrui em 2 fases ("primeiro aponte para outro lugar, sem o obstáculo" → 5 fotos do fundo; depois "aponte para o obstáculo, vou fotografar, mexa um pouco o celular") com contagem falada e bipes.
+- Mínimo 10 fotos por obstáculo (fundo tem 5 e nunca é elegível); máximo 8 obstáculos (classe 'fundo' oculta: não lista, não conta no limite, não apaga).
 - Tudo falado; nenhum passo só-visual.
 
 ## 5. Reconhecimento e dados — Seção 2 (aprovada)
 - Banco em IndexedDB (`guia-visao-obstaculos`): `{id, nome, embeddings: Float32Array[], criadasEm}` via `classifier.getClassifierDataset()` serializado; carrega sozinho ao abrir.
-- Confiança mínima 0.60; classes com cadastro incompleto (menos de 10 fotos) não anunciam; abaixo da confiança, silêncio (sem chute).
+- Confiança mínima 0.60; classes com cadastro incompleto (menos de 10 fotos) não anunciam; classe 'fundo' nunca é anunciada (se o kNN votar fundo, silêncio); abaixo da confiança, silêncio (sem chute).
 - Dataset corrompido → descarta a classe e fala "precisa fotografar de novo" em vez de quebrar.
 - Nenhuma foto sai do aparelho nesta fase; sem conta, sem chave, sem internet obrigatória.
 - Novos vendors pinados: `@tensorflow-models/mobilenet@2.1.0`, `@tensorflow-models/knn-classifier@1.2.2` (+ ~13MB no primeiro carregamento, cacheados pelo SW).

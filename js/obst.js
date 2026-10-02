@@ -33,7 +33,7 @@ const MeuKNn = {
     if(Object.keys(merged).length) this.clf.setClassifierDataset(merged);
     return this.count();
   },
-  count(){ try{ return this.clf.getNumberOfExamplesByClass() || {}; }catch(e){ return {}; } },
+  count(){ try{ return this.clf.getClassExampleCount() || {}; }catch(e){ return {}; } },
   addExampleFromVideo(videoEl, classId){
     const logits = this.mob.infer(videoEl, 'conv_preds');
     this.clf.addExample(logits, classId);
@@ -46,13 +46,14 @@ const MeuKNn = {
     return out;
   },
   async predictTop(videoEl){
-    const n = this.clf.getNumberOfExamplesByClass() || {};
-    const ids = Object.keys(n).filter(k => (n[k]||0) >= this.MIN_FOTOS);
+    const n = this.clf.getClassExampleCount() || {};
+    const ids = Object.keys(n).filter(k => k !== 'fundo' && (n[k]||0) >= this.MIN_FOTOS);
     if(!ids.length) return null;
     const logits = this.mob.infer(videoEl, 'conv_preds');
     let r;
     try{ r = await this.clf.predictClass(logits, 3); }
     finally{ logits.dispose(); }
+    if(r.label === 'fundo') return null;
     const conf = r.confidences[r.label] || 0;
     if(conf < this.MIN_CONF) return null;
     return { id:r.label, conf };
@@ -62,17 +63,24 @@ const MeuKNn = {
 const PRESETS = ['Portão', 'Escada', 'Porta', 'Muro', 'Janela'];
 async function startTraining(nome, camEl, onTick){
   const id = 'm' + Date.now().toString(36);
-  const labelsAntes = new Set(Object.keys(MeuKNn.clf.getClassifierDataset()));
+  const labelsAntes = new Set(Object.keys(MeuKNn.clf.getClassifierDataset()).filter(l => l !== 'fundo'));
+  speak('Primeiro aponte para outro lugar, sem o obstáculo. Vou fotografar o fundo.', true);
+  for(let i = 1; i <= 5; i++){
+    MeuKNn.addExampleFromVideo(camEl, 'fundo');
+    onTick?.(i, 15);
+    try{ beep(660, 0.07, 0.12, 0); }catch(e){}
+    await new Promise(r => setTimeout(r, 1000));
+  }
   speak(`Fotografando ${nome}. Mexa um pouco o celular.`, true);
   for(let i = 1; i <= 10; i++){
     MeuKNn.addExampleFromVideo(camEl, id);
-    onTick?.(i, 10);
+    onTick?.(5 + i, 15);
     try{ beep(880, 0.07, 0.12, 0); }catch(e){}
     await new Promise(r => setTimeout(r, 1000));
   }
   const dataset = await MeuKNn.snapshotDataset();
   const mine = {};
-  for(const [label, e] of Object.entries(dataset)){ if(!labelsAntes.has(label)) mine[label] = e; }
+  for(const [label, e] of Object.entries(dataset)){ if(label !== 'fundo' && !labelsAntes.has(label)) mine[label] = e; }
   await ObstDB.save({ id, nome, dataset:mine, count:10, criadasEm:Date.now() });
   MeuKNn.nomes[id] = nome;
   speak(`${nome} cadastrado com 10 fotos.`, true);
@@ -88,7 +96,7 @@ function fusePersonal(rel, sw, sh, pred){
 /* js/obst.js — lista + presets + fiação (mesma Task 3) */
 async function renderMyObst(){
   const list = $('#myObstList'); list.innerHTML = '';
-  const all = await ObstDB.loadAll().catch(()=>[]);
+  const all = (await ObstDB.loadAll().catch(()=>[])).filter(r => r.id !== 'fundo');
   $('#myObstCount').textContent = all.length;
   const box = $('#myObstPresets'); box.innerHTML = '';
   for(const p of PRESETS){ const b = document.createElement('button'); b.className = 'px-3 py-1.5 rounded-full border border-white/10'; b.textContent = p; b.addEventListener('click', ()=>{ $('#myObstName').value = p; }); box.appendChild(b); }
