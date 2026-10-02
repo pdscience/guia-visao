@@ -58,3 +58,57 @@ const MeuKNn = {
     return { id:r.label, conf };
   },
 };
+/* js/obst.js — append treino (presets PT + captura 1/s + voz) */
+const PRESETS = ['Portão', 'Escada', 'Porta', 'Muro', 'Janela'];
+async function startTraining(nome, camEl, onTick){
+  const id = 'm' + Date.now().toString(36);
+  speak(`Fotografando ${nome}. Mexa um pouco o celular.`, true);
+  for(let i = 1; i <= 10; i++){
+    MeuKNn.addExampleFromVideo(camEl, id);
+    onTick(i, 10);
+    try{ beep(880, 0.07, 0.12, 0); }catch(e){}
+    await new Promise(r => setTimeout(r, 1000));
+  }
+  const dataset = await MeuKNn.snapshotDataset();
+  const mine = {};
+  for(const [label, e] of Object.entries(dataset)){ if(!(label in (MeuKNn._savedLabels||{}))) mine[label] = e; }
+  MeuKNn._savedLabels = MeuKNn._savedLabels || {};
+  Object.keys(mine).forEach(l => MeuKNn._savedLabels[l] = true);
+  await ObstDB.save({ id, nome, dataset:mine, count:10, criadasEm:Date.now() });
+  MeuKNn.nomes[id] = nome;
+  speak(`${nome} cadastrado com 10 fotos.`, true);
+  return id;
+}
+/* js/obst.js — lista + presets + fiação (mesma Task 3) */
+async function renderMyObst(){
+  const list = $('#myObstList'); list.innerHTML = '';
+  const all = await ObstDB.loadAll().catch(()=>[]);
+  $('#myObstCount').textContent = all.length;
+  const box = $('#myObstPresets'); box.innerHTML = '';
+  for(const p of PRESETS){ const b = document.createElement('button'); b.className = 'px-3 py-1.5 rounded-full border border-white/10'; b.textContent = p; b.addEventListener('click', ()=>{ $('#myObstName').value = p; }); box.appendChild(b); }
+  for(const rec of all){
+    const li = document.createElement('li');
+    li.className = 'flex items-center justify-between rounded-2xl border border-white/8 bg-white/4 px-4 py-3';
+    li.innerHTML = `<span>${rec.nome} <span class="font-mono text-[10px] text-white/40">· ${rec.count} fotos</span></span>`;
+    const wrap = document.createElement('span'); wrap.className = 'flex gap-2';
+    const t = document.createElement('button'); t.className = 'icon-btn'; t.setAttribute('aria-label', 'Ouvir nome ' + rec.nome);
+    t.innerHTML = '<i data-lucide="volume-2" class="w-5 h-5"></i>';
+    t.addEventListener('click', ()=>speak(rec.nome, true));
+    const d = document.createElement('button'); d.className = 'icon-btn'; d.setAttribute('aria-label', 'Apagar ' + rec.nome);
+    d.innerHTML = '<i data-lucide="trash-2" class="w-5 h-5"></i>';
+    d.addEventListener('click', async ()=>{ await ObstDB.remove(rec.id); delete MeuKNn.nomes[rec.id]; await MeuKNn.init(); renderMyObst(); speak(rec.nome + ' apagado.', true); });
+    wrap.append(t, d); li.append(wrap); list.append(li);
+  }
+  lucide.createIcons();
+  $('#btnTrainStart').onclick = async ()=>{
+    const nome = ($('#myObstName').value || '').trim();
+    if(!nome){ speak('Diga ou digite o nome do obstáculo primeiro.', true); return; }
+    if(!S.running || S.mode !== 'live'){ speak('Ative a câmera primeiro para fotografar.', true); return; }
+    if(all.length >= 8){ speak('Limite de 8 obstáculos. Apague um para cadastrar outro.', true); return; }
+    $('#btnTrainStart').disabled = true;
+    try{ await startTraining(nome, cam, (i, n)=>{ $('#trainStatus').textContent = `FOTO ${i}/${n}`; }); }
+    catch(e){ speak('Falha ao fotografar. Tente de novo.', true); }
+    $('#btnTrainStart').disabled = false;
+    renderMyObst();
+  };
+}

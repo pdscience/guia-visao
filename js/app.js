@@ -632,6 +632,7 @@ $('#btnMain').addEventListener('pointerdown', ()=>{
 ['pointerup','pointerleave','pointercancel'].forEach(ev=>$('#btnMain').addEventListener(ev, ()=>clearTimeout(S.sosTimer)));
 $('#btnVoice').addEventListener('click', ()=>{ unlockAudio(); setListening(!S.listening); });
 $('#btnSettings').addEventListener('click', ()=>openSheet('sheetSettings'));
+$('#btnMyObst').addEventListener('click', ()=>{ renderMyObst(); openSheet('sheetObst'); });
 $('#btnHelp').addEventListener('click', ()=>openSheet('sheetHelp'));
 $('#btnTorch').addEventListener('click', ()=>{ unlockAudio(); setTorch(!S.torchOn); });
 $('#alertCard').addEventListener('click', repeatAlert);
