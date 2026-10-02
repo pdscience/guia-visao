@@ -143,7 +143,7 @@ function enrich(p, sw, sh){
   dist = dist<2 ? Math.round(dist*10)/10 : Math.round(dist);
   return { cls:p.class, nome:LABELS[p.class]||'Obstáculo', acc:Math.round(p.score*100), bbox:p.bbox, risk, score, dir, dist };
 }
-function phrase(d){ return `${d.nome} ${d.dir}, ${d.risk===2?'muito perto':'perto'}.`; }
+function phrase(d){ return `${d.nome} ${d.dir}, ${d.risk===2?'muito perto':d.risk===1?'perto':'à distância'}.`; }
 
 let lastDetTs = 0;
 function process(list, sw, sh){
@@ -185,8 +185,11 @@ function process(list, sw, sh){
         if(navigator.vibrate && S.vib) navigator.vibrate(70);
       }
     } else {
-      // risco 0: só atualiza visual, sem voz para não poluir
-      if(key!==S.lastKey){ S.lastKey = key; }
+      // risco 0 (distante): anuncia com cooldown longo — dá feedback sem poluir
+      if((key!==S.lastKey && now-S.lastSpoke>5000) || now-S.lastSpoke>12000){
+        S.lastSpoke = now; S.lastKey = key;
+        speak(phrase(top));
+      }
     }
   } else {
     if(!S.lastFree && now - lastDetTs > 4000){
@@ -316,7 +319,10 @@ async function loopLive(){
   if(cam.readyState>=2 && S.modelReady && !S.inferBusy && now-lastInfer>170){
     S.inferBusy = true; lastInfer = now;
     try{
-      const preds = await S.model.detect(cam, 8, 0.52);
+      const preds = await S.model.detect(cam, 10, 0.40);
+      let bt = null;
+      for(const p of preds){ if(!bt || p.score>bt.score) bt = p; }
+      S.lastRaw = { n:preds.length, top: bt ? (LABELS[bt.class]||bt.class)+' '+Math.round(bt.score*100)+'%' : 'nada' };
       const rel = preds.filter(p=>LABELS[p.class]).map(p=>enrich(p, cam.videoWidth, cam.videoHeight))
                        .sort((a,b)=>b.score-a.score);
       process(rel, cam.videoWidth, cam.videoHeight);
@@ -488,6 +494,12 @@ function stopAll(){
 }
 
 /* ---------- descrever cena ---------- */
+function diagnose(){
+  const r = S.lastRaw || {n:0, top:'nada ainda'};
+  const v = (cam.videoWidth||0)+' por '+(cam.videoHeight||0);
+  speak(`Diagnóstico. Modelo ${S.modelReady?'carregado':'não carregado'}. Vídeo ${v}. Última análise: ${r.n} detecções, melhor: ${r.top}.`, true);
+  logEvent('DIAG', `modelo=${S.modelReady} video=${v} raw=${r.n} top=${r.top}`);
+}
 function describe(){
   const list = S.lastDets || [];
   if(!list.length){ speak('Nenhum obstáculo detectado à frente. Caminho livre.', true); logEvent('DESC','cena vazia'); return; }
@@ -555,7 +567,8 @@ function handleCommand(t){
   else if(has('lanterna','luz','flash')){ setTorch(!S.torchOn); }
   else if(has('rápido','rapido')){ setRate(Math.min(1.5,S.rate+0.15)); speak('Fala mais rápida.'); }
   else if(has('devagar','lento','lenta')){ setRate(Math.max(0.6,S.rate-0.15)); speak('Fala mais devagar.'); }
-  else if(has('ajuda','comandos')){ speak('Você pode dizer: iniciar, parar, o que tem à frente, repetir, lanterna, mais rápido, mais devagar.', true); openSheet('sheetHelp'); }
+  else if(has('diagnóstico','diagnostico','status do sistema')){ diagnose(); }
+  else if(has('ajuda','comandos')){ speak('Você pode dizer: iniciar, parar, o que tem à frente, repetir, lanterna, diagnóstico, mais rápido, mais devagar.', true); openSheet('sheetHelp'); }
   else { speak('Comando não reconhecido. Diga ajuda para ouvir as opções.', true); }
 }
 
