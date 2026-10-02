@@ -160,6 +160,7 @@ function process(list, sw, sh){
     lastDetTs = now; S.lastFree = false;
     $('#alertTitle').textContent = `${top.nome} ${top.dir}`;
     $('#alertSub').textContent = `${top.risk===2?'MUITO PERTO':top.risk===1?'PERTO':'À DISTÂNCIA'} · ≈ ${String(top.dist).replace('.',',')} m · ${top.acc}%`;
+    $('#alertCard').setAttribute('aria-label','Repetir último alerta: '+$('#alertTitle').textContent+'. '+$('#alertSub').textContent);
     $('#alertCard').classList.remove('opacity-70');
     $('#alertIconOk').classList.toggle('hidden', risk!==0);
     $('#alertIconWarn').classList.toggle('hidden', risk!==1);
@@ -190,6 +191,7 @@ function process(list, sw, sh){
       S.lastFree = true; S.lastKey=''; S.stableKey=''; S.stableCount=0;
       $('#alertTitle').textContent = 'Caminho livre';
       $('#alertSub').textContent = 'NENHUM OBSTÁCULO À FRENTE';
+      $('#alertCard').setAttribute('aria-label','Repetir último alerta: '+$('#alertTitle').textContent+'. '+$('#alertSub').textContent);
       $('#alertCard').classList.add('opacity-70');
       $('#alertIconOk').classList.remove('hidden');
       $('#alertIconWarn').classList.add('hidden');
@@ -462,6 +464,7 @@ function stopAll(){
   $('#mainLabel').textContent='INICIAR';
   $('#alertTitle').textContent='Caminho livre';
   $('#alertSub').textContent='NENHUM OBSTÁCULO À FRENTE';
+  $('#alertCard').setAttribute('aria-label','Repetir último alerta: '+$('#alertTitle').textContent+'. '+$('#alertSub').textContent);
   $('#alertCard').classList.add('opacity-70');
   $('#alertIconOk').classList.remove('hidden');
   $('#alertIconWarn').classList.add('hidden');
