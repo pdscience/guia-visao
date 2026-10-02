@@ -81,6 +81,9 @@ async function startTraining(nome, camEl, onTick){
   const dataset = await MeuKNn.snapshotDataset();
   const mine = {};
   for(const [label, e] of Object.entries(dataset)){ if(label !== 'fundo' && !labelsAntes.has(label)) mine[label] = e; }
+  const fundoDs = {};
+  if(dataset['fundo']) fundoDs['fundo'] = dataset['fundo'];
+  await ObstDB.save({ id:'fundo', nome:'Fundo', dataset:fundoDs, count:5, criadasEm:Date.now() });
   await ObstDB.save({ id, nome, dataset:mine, count:10, criadasEm:Date.now() });
   MeuKNn.nomes[id] = nome;
   speak(`${nome} cadastrado com 10 fotos.`, true);

@@ -541,7 +541,7 @@ function stopAll(){
 function diagnose(){
   const r = S.lastRaw || {n:0, top:'nada ainda'};
   const v = (cam.videoWidth||0)+' por '+(cam.videoHeight||0);
-  const kp = Object.keys(S.knnCount||{}).length;
+  const kp = Object.keys(S.knnCount||{}).filter(k=>k!=='fundo').length;
   speak(`Diagnóstico. Modelo ${S.modelReady?'carregado':'não carregado'}. Vídeo ${v}. Última análise: ${r.n} detecções, melhor: ${r.top}. ${kp} obstáculos pessoais carregados.`, true);
   logEvent('DIAG', `modelo=${S.modelReady} video=${v} raw=${r.n} top=${r.top} knn=${kp}`);
 }
