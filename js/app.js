@@ -326,9 +326,22 @@ async function startLive(){
       }
     }
     if(!S.running) return;
-    try{ await MeuKNn.init(); S.knnReady = true; S.knnCount = MeuKNn.count(); }catch(e){ S.knnReady = false; }
     setChip('DETECTANDO');
     requestAnimationFrame(loopLive);
+    // kNN pessoal carrega EM SEGUNDO PLANO: os pesos do MobileNet vêm da rede e
+    // nunca podem segurar o rAF do COCO (fica tudo congelado até o load terminar).
+    void (async ()=>{
+      try{
+        await MeuKNn.init();
+        if(!S.running) return;
+        S.knnReady = true; S.knnCount = MeuKNn.count();
+        logEvent('IA','kNN pessoal pronto ('+Object.keys(S.knnCount).filter(k=>k!=='fundo').length+' obstáculos)');
+      }catch(e){
+        S.knnReady = false;
+        console.warn('kNN pessoal indisponível:', e);
+        logEvent('IA','kNN pessoal indisponível ('+(e && e.message || e)+') — detecção COCO segue normal','#FFC53D');
+      }
+    })();
   }catch(err){
     console.warn(err);
     stopAll();

@@ -14,11 +14,45 @@ const ObstDB = {
 };
 
 const MeuKNn = {
-  clf:null, mob:null, nomes:{}, MIN_FOTOS:10, MIN_CONF:0.60,
+  clf:null, mob:null, nomes:{}, MIN_FOTOS:10, MIN_CONF:0.60, LOAD_TIMEOUT:8000,
+  initPromise:null, rawLoad:null,
+  // pesos do MobileNet: carga única, memoizada e com timeout.
+  // on-line: baixa uma vez (~14MB) e reusa em todas as sessões;
+  // off-line/sem rede: falha em até LOAD_TIMEOUT e o app segue só com COCO.
+  ensureModel(){
+    if(this.mob) return Promise.resolve(this.mob);      // já carregado: reuso, sem rede
+    if(this.initPromise) return this.initPromise;        // carga em andamento: não duplica
+    this.initPromise = this._loadModel();
+    return this.initPromise;
+  },
+  async _loadModel(){
+    try{
+      if(!window.mobilenet) throw new Error('mobilenet.min.js ausente');
+      // o load bruto é compartilhado: um retry após o timeout não abre uma 2ª descarga
+      if(!this.rawLoad){
+        this.rawLoad = mobilenet.load({version:2, alpha:1.0});
+        this.rawLoad.catch(()=>{ this.rawLoad = null; });
+      }
+      this.mob = await Promise.race([
+        this.rawLoad,
+        new Promise((_, rej)=>setTimeout(()=>rej(new Error('timeout de '+this.LOAD_TIMEOUT+'ms ao baixar o MobileNet')), this.LOAD_TIMEOUT))
+      ]);
+      return this.mob;
+    }catch(e){
+      this.initPromise = null;   // libera nova tentativa em uma próxima sessão
+      throw e;
+    }
+  },
   async init(){
-    this.mob = await mobilenet.load({version:2, alpha:1.0});
-    this.clf = knnClassifier.create();
-    const all = await ObstDB.loadAll().catch(()=>[]);
+    await this.ensureModel();     // só a rede é cara; aqui é reuso
+    await this.loadDataset();     // IDB local: barato, pode repetir (ex.: após apagar)
+    return this.count();
+  },
+  async loadDataset(){
+    if(!this.clf) this.clf = knnClassifier.create();
+    const all = await ObstDB.loadAll().catch(()=>null);
+    if(all === null) return;      // IndexedDB indisponível: preserva o que já está em memória
+    this.nomes = {};
     const merged = {};
     for(const rec of all){
       try{
@@ -62,6 +96,8 @@ const MeuKNn = {
 /* js/obst.js — append treino (presets PT + captura 1/s + voz) */
 const PRESETS = ['Portão', 'Escada', 'Porta', 'Muro', 'Janela'];
 async function startTraining(nome, camEl, onTick){
+  // o carregamento do MobileNet é assíncrono em segundo plano: garante os pesos antes de fotografar
+  try{ await MeuKNn.ensureModel(); }catch(e){ throw new Error('Sem o modelo MobileNet (rode o app com internet uma vez).'); }
   const id = 'm' + Date.now().toString(36);
   const labelsAntes = new Set(Object.keys(MeuKNn.clf.getClassifierDataset()).filter(l => l !== 'fundo'));
   speak('Primeiro aponte para outro lugar, sem o obstáculo. Vou fotografar o fundo.', true);
