@@ -169,24 +169,24 @@ function process(list, sw, sh){
     $('#alertIconDanger').classList.toggle('hidden', risk!==2);
 
     const key = top.cls+top.dir+(top.risk>=1?top.risk:0);
-    // histerese: exige 3 frames estáveis com a mesma chave antes de trocar o anúncio
+    // histerese: exige 2 frames estáveis com a mesma chave antes de trocar o anúncio
     if(key===S.stableKey){ S.stableCount++; } else { S.stableKey=key; S.stableCount=1; }
-    const stable = S.stableCount>=3 || top.risk===2 && S.stableCount>=2;
+    const stable = S.stableCount>=2;
     if(!stable && key!==S.lastKey) return;
     if(top.risk===2){
-      if(now - S.lastSpoke > 2400 && (key!==S.lastKey || now-S.lastSpoke>5200)){
+      if(now - S.lastSpoke > 2400 && (key!==S.lastKey || now-S.lastSpoke>5000)){
         S.lastSpoke = now; S.lastKey = key;
         speak(phrase(top), true); vibrate([170,90,170]);
       } else if(now - S.lastVib > 1300){ S.lastVib = now; vibrate([150,80,150]); }
     } else if(top.risk===1){
-      if((key!==S.lastKey && now-S.lastSpoke>3800) || now-S.lastSpoke>7000){
+      if((key!==S.lastKey && now-S.lastSpoke>3000) || now-S.lastSpoke>6000){
         S.lastSpoke = now; S.lastKey = key;
         speak(phrase(top));
         if(navigator.vibrate && S.vib) navigator.vibrate(70);
       }
     } else {
-      // risco 0 (distante): anuncia com cooldown longo — dá feedback sem poluir
-      if((key!==S.lastKey && now-S.lastSpoke>5000) || now-S.lastSpoke>12000){
+      // risco 0 (distante): repete o nome a cada 8s enquanto estiver visível
+      if((key!==S.lastKey && now-S.lastSpoke>4000) || now-S.lastSpoke>8000){
         S.lastSpoke = now; S.lastKey = key;
         speak(phrase(top));
       }
