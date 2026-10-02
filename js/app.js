@@ -204,7 +204,10 @@ function process(list, sw, sh){
       }
     }
   } else {
-    if(!S.lastFree && now - lastDetTs > 4000){
+    // "caminho livre" só após 7s seguidos sem NADA (nem no bruto): evita
+    // falso livre em celular lento, onde 2 frames perdidos já davam 4-8s de gap
+    const rawEmpty = (S.lastRaw||{n:0}).n===0;
+    if(!S.lastFree && rawEmpty && now - lastDetTs > 7000){
       S.lastFree = true; S.lastKey=''; S.stableKey=''; S.stableCount=0;
       $('#alertTitle').textContent = 'Caminho livre';
       $('#alertSub').textContent = 'NENHUM OBSTÁCULO À FRENTE';
@@ -278,6 +281,14 @@ async function startLive(){
     S.track = S.stream.getVideoTracks()[0];
     cam.srcObject = S.stream;
     await cam.play().catch(()=>{});
+    // canvas reduzido p/ inferência: modelo interno é 300x300, 640px corta
+    // a latência no celular sem mudar o mapeamento do overlay
+    try{
+      const sc = Math.min(1, 640/(cam.videoWidth||1280));
+      S.sw = Math.round(cam.videoWidth*sc); S.sh = Math.round(cam.videoHeight*sc);
+      S.small = document.createElement('canvas'); S.small.width = S.sw; S.small.height = S.sh;
+      S.sctx = S.small.getContext('2d', { willReadFrequently:true });
+    }catch(e){ S.small = null; }
     cam.classList.remove('opacity-0');
     S.mode='live';
     setChip('CÂMERA ATIVA');
@@ -331,13 +342,15 @@ async function loopLive(){
   if(cam.readyState>=2 && S.modelReady && !S.inferBusy && now-lastInfer>170){
     S.inferBusy = true; lastInfer = now;
     try{
-      const preds = await S.model.detect(cam, 10, 0.40);
+      let src = cam, sw = cam.videoWidth, sh = cam.videoHeight;
+      if(S.small && S.sctx && S.sw){ S.sctx.drawImage(cam, 0, 0, S.sw, S.sh); src = S.small; sw = S.sw; sh = S.sh; }
+      const preds = await S.model.detect(src, 10, 0.40);
       let bt = null;
       for(const p of preds){ if(!bt || p.score>bt.score) bt = p; }
       S.lastRaw = { n:preds.length, top: bt ? (LABELS[bt.class]||bt.class)+' '+Math.round(bt.score*100)+'%' : 'nada' };
-      const rel = preds.filter(p=>LABELS[p.class]).map(p=>enrich(p, cam.videoWidth, cam.videoHeight))
+      const rel = preds.filter(p=>LABELS[p.class]).map(p=>enrich(p, sw, sh))
                        .sort((a,b)=>b.score-a.score);
-      process(rel, cam.videoWidth, cam.videoHeight);
+      process(rel, sw, sh);
     }catch(e){}
     S.inferBusy=false;
   }
@@ -437,6 +450,7 @@ function simTick(ts){
     }
   }
   if(S.simItems.length<3 && Math.random()<0.01) spawnSim();
+  S.lastRaw = { n:preds.length, top:preds[0] ? preds[0].class : 'nada' };
   const rel = preds.map(p=>enrich(p,VW,VH)).sort((a,b)=>b.score-a.score);
   process(rel, VW, VH);
   requestAnimationFrame(simTick);
@@ -457,6 +471,7 @@ async function start(mode){
   S.running = true;
   S.prefMode = mode;
   S.stableKey=''; S.stableCount=0;
+  S.lastFree = true; lastDetTs = performance.now();
   app.classList.add('running');
   $('#idleState').style.display='none';
   $('#intro').classList.add('away');
@@ -501,7 +516,7 @@ function stopAll(){
   $('#alertIconDanger').classList.add('hidden');
   clearInterval(S.timer);
   if(S.wake){ try{S.wake.release();}catch(e){} S.wake=null; }
-  S.lastDets=[]; S.stableKey=''; S.stableCount=0; S.lastPan=0; S.closeness=0; S.noFrameSince=0; S.noFrameWarned=false;
+  S.lastDets=[]; S.stableKey=''; S.stableCount=0; S.lastPan=0; S.closeness=0; S.noFrameSince=0; S.noFrameWarned=false; S.lastFree=true; S.lastRaw={n:0,top:'nada'}; S.small=null;
   logEvent('STOP','detecção pausada','#FFC53D');
 }
 
