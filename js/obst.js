@@ -62,18 +62,17 @@ const MeuKNn = {
 const PRESETS = ['Portão', 'Escada', 'Porta', 'Muro', 'Janela'];
 async function startTraining(nome, camEl, onTick){
   const id = 'm' + Date.now().toString(36);
+  const labelsAntes = new Set(Object.keys(MeuKNn.clf.getClassifierDataset()));
   speak(`Fotografando ${nome}. Mexa um pouco o celular.`, true);
   for(let i = 1; i <= 10; i++){
     MeuKNn.addExampleFromVideo(camEl, id);
-    onTick(i, 10);
+    onTick?.(i, 10);
     try{ beep(880, 0.07, 0.12, 0); }catch(e){}
     await new Promise(r => setTimeout(r, 1000));
   }
   const dataset = await MeuKNn.snapshotDataset();
   const mine = {};
-  for(const [label, e] of Object.entries(dataset)){ if(!(label in (MeuKNn._savedLabels||{}))) mine[label] = e; }
-  MeuKNn._savedLabels = MeuKNn._savedLabels || {};
-  Object.keys(mine).forEach(l => MeuKNn._savedLabels[l] = true);
+  for(const [label, e] of Object.entries(dataset)){ if(!labelsAntes.has(label)) mine[label] = e; }
   await ObstDB.save({ id, nome, dataset:mine, count:10, criadasEm:Date.now() });
   MeuKNn.nomes[id] = nome;
   speak(`${nome} cadastrado com 10 fotos.`, true);
@@ -89,7 +88,16 @@ async function renderMyObst(){
   for(const rec of all){
     const li = document.createElement('li');
     li.className = 'flex items-center justify-between rounded-2xl border border-white/8 bg-white/4 px-4 py-3';
-    li.innerHTML = `<span>${rec.nome} <span class="font-mono text-[10px] text-white/40">· ${rec.count} fotos</span></span>`;
+    const nameWrap = document.createElement('span');
+    const spanNome = document.createElement('span');
+    spanNome.textContent = rec.nome;
+    nameWrap.appendChild(spanNome);
+    nameWrap.appendChild(document.createTextNode(' '));
+    const spanCount = document.createElement('span');
+    spanCount.className = 'font-mono text-[10px] text-white/40';
+    spanCount.textContent = `· ${rec.count} fotos`;
+    nameWrap.appendChild(spanCount);
+    li.appendChild(nameWrap);
     const wrap = document.createElement('span'); wrap.className = 'flex gap-2';
     const t = document.createElement('button'); t.className = 'icon-btn'; t.setAttribute('aria-label', 'Ouvir nome ' + rec.nome);
     t.innerHTML = '<i data-lucide="volume-2" class="w-5 h-5"></i>';
