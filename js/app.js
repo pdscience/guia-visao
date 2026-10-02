@@ -19,6 +19,7 @@ const S = {
   frames:0, detCount:0, voiceCount:0, vibCount:0, sessionT:0, timer:null,
   simItems:[], simLast:0,
   wake:null, inferBusy:false,
+  knnOn:true, knnReady:false, knnCount:{},
 };
 
 const RISK_C = ['#9DF53C','#FFC53D','#FF4E3E'];
@@ -241,10 +242,21 @@ function drawOverlay(list, sw, sh){
 
   const T = performance.now();
   for(const d of list.slice(0,5)){
+    const c = RISK_C[d.risk];
+    if(d.personal){
+      // personal: só etiqueta central "NOME · %", sem cantos (bbox é tela cheia)
+      const label = `${d.nome.toUpperCase()} · ${d.acc}%`;
+      octx.font='700 12px "JetBrains Mono"';
+      const tw = octx.measureText(label).width + 20;
+      octx.fillStyle = c;
+      roundRect(octx, VW/2-tw/2, 64, tw, 22, 8); octx.fill();
+      octx.fillStyle = '#0a0d05';
+      octx.fillText(label, VW/2-tw/2+10, 64+15);
+      continue;
+    }
     let [x,y,w,h] = d.bbox;
     if(S.mode!=='sim'){ x=x*t.s+t.x; y=y*t.s+t.y; w*=t.s; h*=t.s; }
     x=Math.max(4,x); y=Math.max(4,y); w=Math.min(VW-8,w); h=Math.min(VH-8,h);
-    const c = RISK_C[d.risk];
     const k = Math.min(18, w/4, h/4);
     octx.lineWidth = d.risk===2 ? 3.5 + Math.sin(T/130)*1.2 : 3;
     octx.strokeStyle = c; octx.lineCap='round';
@@ -314,6 +326,7 @@ async function startLive(){
       }
     }
     if(!S.running) return;
+    try{ await MeuKNn.init(); S.knnReady = true; S.knnCount = MeuKNn.count(); }catch(e){ S.knnReady = false; }
     setChip('DETECTANDO');
     requestAnimationFrame(loopLive);
   }catch(err){
@@ -326,6 +339,7 @@ async function startLive(){
   }
 }
 let lastInfer=0, framesWin=0, fpsT=performance.now();
+let knnTurn = false;
 async function loopLive(){
   if(S.mode!=='live' || !S.running) return;
   const now = performance.now();
@@ -348,8 +362,11 @@ async function loopLive(){
       let bt = null;
       for(const p of preds){ if(!bt || p.score>bt.score) bt = p; }
       S.lastRaw = { n:preds.length, top: bt ? (LABELS[bt.class]||bt.class)+' '+Math.round(bt.score*100)+'%' : 'nada' };
-      const rel = preds.filter(p=>LABELS[p.class]).map(p=>enrich(p, sw, sh))
-                       .sort((a,b)=>b.score-a.score);
+      let rel = preds.filter(p=>LABELS[p.class]).map(p=>enrich(p, sw, sh)).sort((a,b)=>b.score-a.score);
+      knnTurn = !knnTurn;
+      if(S.knnOn && S.knnReady && knnTurn){
+        try{ rel = fusePersonal(rel, sw, sh, await MeuKNn.predictTop(src)); }catch(e){}
+      }
       process(rel, sw, sh);
     }catch(e){}
     S.inferBusy=false;
@@ -524,8 +541,9 @@ function stopAll(){
 function diagnose(){
   const r = S.lastRaw || {n:0, top:'nada ainda'};
   const v = (cam.videoWidth||0)+' por '+(cam.videoHeight||0);
-  speak(`Diagnóstico. Modelo ${S.modelReady?'carregado':'não carregado'}. Vídeo ${v}. Última análise: ${r.n} detecções, melhor: ${r.top}.`, true);
-  logEvent('DIAG', `modelo=${S.modelReady} video=${v} raw=${r.n} top=${r.top}`);
+  const kp = Object.keys(S.knnCount||{}).length;
+  speak(`Diagnóstico. Modelo ${S.modelReady?'carregado':'não carregado'}. Vídeo ${v}. Última análise: ${r.n} detecções, melhor: ${r.top}. ${kp} obstáculos pessoais carregados.`, true);
+  logEvent('DIAG', `modelo=${S.modelReady} video=${v} raw=${r.n} top=${r.top} knn=${kp}`);
 }
 function describe(){
   const list = S.lastDets || [];
@@ -669,6 +687,7 @@ $('#swVoice').addEventListener('change', e=>{ S.tts=e.target.checked; if(S.tts) 
 $('#swAutoVoice').addEventListener('change', e=>{ S.autoVoice=e.target.checked; logEvent('CFG','escuta automática '+(S.autoVoice?'on':'off')); if(S.autoVoice && !S.listening && S.running) setListening(true,true); if(!S.autoVoice && S.listening) setListening(false,true); });
 $('#swVib').addEventListener('change', e=>{ S.vib=e.target.checked; if(S.vib) vibrate(60); logEvent('CFG','vibração '+(S.vib?'on':'off')); });
 $('#swSon').addEventListener('change', e=>{ S.son=e.target.checked; if(S.son) beep(880); logEvent('CFG','sonificação '+(S.son?'on':'off')); });
+$('#swKNn').addEventListener('change', e=>{ S.knnOn=e.target.checked; logEvent('CFG','meus obstáculos '+(S.knnOn?'on':'off')); });
 $('#swHC').addEventListener('change', e=>{ document.body.classList.toggle('hc', e.target.checked); speak(e.target.checked?'Alto contraste ativado.':'Alto contraste desativado.'); });
 $('#swBig').addEventListener('change', e=>{ document.body.classList.toggle('bigtype', e.target.checked); speak(e.target.checked?'Texto ampliado.':'Texto normal.'); });
 paintRange($('#rgRate')); paintRange($('#rgSens'));

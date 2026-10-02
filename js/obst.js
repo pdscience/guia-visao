@@ -78,6 +78,13 @@ async function startTraining(nome, camEl, onTick){
   speak(`${nome} cadastrado com 10 fotos.`, true);
   return id;
 }
+/* js/obst.js — fusão (label só, sem cantos na tela cheia) */
+function fusePersonal(rel, sw, sh, pred){
+  if(!pred) return rel;
+  const nome = MeuKNn.nomes[pred.id] || 'Meu obstáculo';
+  rel.unshift({ cls:'meu:'+pred.id, nome, acc:Math.round(pred.conf*100), bbox:[0,0,sw,sh], risk:1, score:pred.conf, dir:'à frente', dist:'—', personal:true });
+  return rel;
+}
 /* js/obst.js — lista + presets + fiação (mesma Task 3) */
 async function renderMyObst(){
   const list = $('#myObstList'); list.innerHTML = '';
