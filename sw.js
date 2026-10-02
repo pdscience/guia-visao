@@ -8,5 +8,5 @@ self.addEventListener('fetch',e=>{
     e.respondWith(caches.match(e.request).then(h=>h||fetch(e.request).then(r=>{const c=r.clone();caches.open(CACHE).then(cc=>cc.put(e.request,c));return r;}).catch(()=>e.request.mode==='navigate'?caches.match('./offline.html'):undefined)));
   } else if(u.hostname==='storage.googleapis.com'&&u.pathname.startsWith('/tfjs-models/')){
     e.respondWith(caches.open(MODEL).then(c=>c.match(e.request).then(h=>{const f=fetch(e.request).then(r=>{if(r.ok)c.put(e.request,r.clone());return r;}).catch(()=>h);return h||f;})));
-  }
+  } else if((u.hostname==='fonts.googleapis.com'||u.hostname==='fonts.gstatic.com')&&e.request.method==='GET'){e.respondWith(Promise.race([fetch(e.request).then(r=>{if(r.ok){const c=r.clone();caches.open(CACHE).then(cc=>cc.put(e.request,c));}return r;}),new Promise((_,rej)=>setTimeout(()=>rej(new Error('fonts-timeout')),3000))]).catch(()=>caches.match(e.request)));}
 });
