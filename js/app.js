@@ -25,14 +25,16 @@ const RISK_C = ['#9DF53C','#FFC53D','#FF4E3E'];
 const RISK_T = ['LIVRE','ATENÇÃO','PERIGO'];
 
 const LABELS = {
-  person:'Pessoa', bicycle:'Bicicleta', car:'Carro', motorcycle:'Moto', bus:'Ônibus', truck:'Caminhão',
-  'traffic light':'Semáforo', 'fire hydrant':'Hidrante', 'stop sign':'Placa de pare', bench:'Banco',
-  dog:'Cachorro', cat:'Gato', bird:'Pássaro', horse:'Cavalo', chair:'Cadeira', couch:'Sofá',
-  'potted plant':'Planta', bed:'Cama', 'dining table':'Mesa', toilet:'Vaso sanitário', tv:'Televisão',
-  laptop:'Notebook', 'cell phone':'Celular', microwave:'Micro-ondas', oven:'Forno', sink:'Pia',
-  refrigerator:'Geladeira', book:'Livro', clock:'Relógio', vase:'Vaso de flor', scissors:'Tesoura',
-  backpack:'Mochila', umbrella:'Guarda-chuva', handbag:'Bolsa', suitcase:'Mala', bottle:'Garrafa',
-  cup:'Copo', bowl:'Tigela', 'sports ball':'Bola', skateboard:'Skate', surfboard:'Prancha', knife:'Faca'
+  person:'Pessoa', bicycle:'Bicicleta', car:'Carro', motorcycle:'Moto', airplane:'Avião', bus:'Ônibus', train:'Trem', truck:'Caminhão', boat:'Barco',
+  'traffic light':'Semáforo', 'fire hydrant':'Hidrante', 'stop sign':'Placa de pare', 'parking meter':'Parquímetro', bench:'Banco',
+  bird:'Pássaro', cat:'Gato', dog:'Cachorro', horse:'Cavalo', sheep:'Ovelha', cow:'Vaca', elephant:'Elefante', bear:'Urso', zebra:'Zebra', giraffe:'Girafa',
+  backpack:'Mochila', umbrella:'Guarda-chuva', handbag:'Bolsa', tie:'Gravata', suitcase:'Mala', frisbee:'Frisbee', skis:'Esquis', snowboard:'Snowboard',
+  'sports ball':'Bola', kite:'Pipa', 'baseball bat':'Taco de beisebol', 'baseball glove':'Luva de beisebol', skateboard:'Skate', surfboard:'Prancha', 'tennis racket':'Raquete de tênis',
+  bottle:'Garrafa', 'wine glass':'Taça', cup:'Copo', fork:'Garfo', knife:'Faca', spoon:'Colher', bowl:'Tigela',
+  banana:'Banana', apple:'Maçã', sandwich:'Sanduíche', orange:'Laranja', broccoli:'Brócolis', carrot:'Cenoura', 'hot dog':'Cachorro-quente', pizza:'Pizza', donut:'Rosquinha', cake:'Bolo',
+  chair:'Cadeira', couch:'Sofá', 'potted plant':'Planta', bed:'Cama', 'dining table':'Mesa', toilet:'Vaso sanitário', tv:'Televisão',
+  laptop:'Notebook', mouse:'Mouse', remote:'Controle remoto', keyboard:'Teclado', 'cell phone':'Celular', microwave:'Micro-ondas', oven:'Forno', toaster:'Torradeira', sink:'Pia',
+  refrigerator:'Geladeira', book:'Livro', clock:'Relógio', vase:'Vaso de flor', scissors:'Tesoura', 'teddy bear':'Ursinho de pelúcia', 'hair drier':'Secador de cabelo', toothbrush:'Escova de dentes'
 };
 const TALL = new Set(['person','dog','cat','horse','refrigerator','fire hydrant']);
 const TYPES_SIM = ['person','car','chair','dog','backpack','box'];
@@ -301,6 +303,16 @@ let lastInfer=0, framesWin=0, fpsT=performance.now();
 async function loopLive(){
   if(S.mode!=='live' || !S.running) return;
   const now = performance.now();
+  // diagnóstico: câmera sem frames (permissão negada, track mutado ou tela preta)
+  if(cam.readyState<2 || !cam.videoWidth){
+    if(!S.noFrameSince) S.noFrameSince = now;
+    if(now - S.noFrameSince > 5000 && !S.noFrameWarned){
+      S.noFrameWarned = true;
+      setChip('SEM IMAGEM');
+      speak('Câmera sem imagem. Verifique a permissão da câmera no navegador.', true);
+      logEvent('ERRO','câmera sem frames (readyState/videoWidth zerado)','#FF4E3E');
+    }
+  } else { S.noFrameSince = 0; if(S.noFrameWarned){ S.noFrameWarned = false; setChip('DETECTANDO'); } }
   if(cam.readyState>=2 && S.modelReady && !S.inferBusy && now-lastInfer>170){
     S.inferBusy = true; lastInfer = now;
     try{
@@ -471,7 +483,7 @@ function stopAll(){
   $('#alertIconDanger').classList.add('hidden');
   clearInterval(S.timer);
   if(S.wake){ try{S.wake.release();}catch(e){} S.wake=null; }
-  S.lastDets=[]; S.stableKey=''; S.stableCount=0; S.lastPan=0; S.closeness=0;
+  S.lastDets=[]; S.stableKey=''; S.stableCount=0; S.lastPan=0; S.closeness=0; S.noFrameSince=0; S.noFrameWarned=false;
   logEvent('STOP','detecção pausada','#FFC53D');
 }
 
