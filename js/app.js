@@ -8,7 +8,7 @@ const $ = s => document.querySelector(s);
 const S = {
   mode:'idle',            // idle | live | sim
   running:false,
-  model:null, modelReady:false,
+  model:null, modelReady:false, acc:false, modelBase:null,
   stream:null, track:null, torchOn:false,
   risk:0, closeness:0,
   dets:[], lastFree:true, freeSince:0,
@@ -362,6 +362,16 @@ function drawOverlay(list, sw, sh){
 function roundRect(c,x,y,w,h,r){ c.beginPath(); c.moveTo(x+r,y); c.arcTo(x+w,y,x+w,y+h,r); c.arcTo(x+w,y+h,x,y+h,r); c.arcTo(x,y+h,x,y,r); c.arcTo(x,y,x+w,y,r); c.closePath(); }
 
 /* ---------- modo LIVE ---------- */
+// carrega/recarrega o COCO-SSD no base escolhido no toggle "Precisão alta":
+// lite_mobilenet_v2 = rapido (padrao) · mobilenet_v2 = mais preciso, ~2x mais lento
+async function ensureModel(){
+  const base = S.acc ? 'mobilenet_v2' : 'lite_mobilenet_v2';
+  if(S.modelReady && S.modelBase === base) return;
+  if(!window.cocoSsd) throw new Error('tf');
+  const m = await cocoSsd.load({base});
+  S.model = m; S.modelBase = base; S.modelReady = true;
+  logEvent('IA','modelo COCO-SSD carregado ('+base+')');
+}
 async function startLive(){
   try{
     S.stream = await navigator.mediaDevices.getUserMedia({
@@ -387,10 +397,7 @@ async function startLive(){
     if(!S.modelReady){
       setChip('CARREGANDO MODELO');
       try{
-        if(!window.cocoSsd) throw new Error('tf');
-        S.model = await cocoSsd.load({base:'lite_mobilenet_v2'});
-        S.modelReady = true;
-        logEvent('IA','modelo COCO-SSD carregado');
+        await ensureModel();
         toast('Visão computacional pronta');
       }catch(loadErr){
         console.warn(loadErr);
@@ -680,8 +687,8 @@ function diagnose(){
   const kp = Object.keys(S.knnCount||{}).filter(k=>k!=='fundo').length;
   const voz = voice ? voice.name : 'padrão do sistema';
   const tts = !('speechSynthesis' in window) ? 'indisponível' : (ttsBusy ? 'ocupado' : 'livre');
-  const linha = `modelo=${S.modelReady} video=${v} raw=${r.n} top=${r.top} knn=${kp} tts=${tts} errVoz=${S.ttsErr||'-'} errIA=${S.inferErr||'-'} voz=${voz} mic=${S.listening?'on':'off'}${micPaused?'(pausado)':''}`;
-  speak(`Diagnóstico. Modelo ${S.modelReady?'carregado':'não carregado'}. Vídeo ${v}. Análise bruta: ${r.n} detecções, melhor: ${r.top}. ${kp} obstáculos pessoais. Voz: ${voz}. TTS: ${tts}. Último erro de voz: ${S.ttsErr||'nenhum'}. Último erro de visão: ${S.inferErr||'nenhum'}.`, true);
+  const linha = `modelo=${S.modelReady?(S.modelBase||'?'):'não carregado'} video=${v} raw=${r.n} top=${r.top} knn=${kp} tts=${tts} errVoz=${S.ttsErr||'-'} errIA=${S.inferErr||'-'} voz=${voz} mic=${S.listening?'on':'off'}${micPaused?'(pausado)':''}`;
+  speak(`Diagnóstico. Modelo ${S.modelReady?(S.modelBase||'desconhecido'):'não carregado'}. Vídeo ${v}. Análise bruta: ${r.n} detecções, melhor: ${r.top}. ${kp} obstáculos pessoais. Voz: ${voz}. TTS: ${tts}. Último erro de voz: ${S.ttsErr||'nenhum'}. Último erro de visão: ${S.inferErr||'nenhum'}.`, true);
   logEvent('DIAG', linha);
   toast(linha); // no celular a telemetria nao aparece: o toast leva tudo junto
 }
@@ -833,6 +840,27 @@ $('#swAutoVoice').addEventListener('change', e=>{ S.autoVoice=e.target.checked; 
 $('#swVib').addEventListener('change', e=>{ S.vib=e.target.checked; if(S.vib) vibrate(60); logEvent('CFG','vibração '+(S.vib?'on':'off')); });
 $('#swSon').addEventListener('change', e=>{ S.son=e.target.checked; if(S.son) beep(880); logEvent('CFG','sonificação '+(S.son?'on':'off')); });
 $('#swKNn').addEventListener('change', e=>{ S.knnOn=e.target.checked; if(!S.knnOn) S.personalHit=null; logEvent('CFG','meus obstáculos '+(S.knnOn?'on':'off')); });
+$('#swAcc').addEventListener('change', async e=>{
+  S.acc = e.target.checked;
+  logEvent('CFG','precisão alta '+(S.acc?'on':'off'));
+  if(!window.cocoSsd){ toast('Modelo de IA indisponível'); return; }
+  const b = S.acc?'mobilenet_v2':'lite_mobilenet_v2';
+  toast('Trocando modelo para '+b+'…');
+  setChip('TROCANDO MODELO');
+  const antes = S.modelBase;              // base em uso antes da troca
+  S.modelReady = false;                   // o loop pausa a inferência durante o load
+  try{
+    await ensureModel();
+    toast('Modelo '+b+' ativo');
+    if(S.running && S.mode==='live') setChip('DETECTANDO');
+  }catch(err){
+    // falhou: volta ao modelo anterior (S.model não foi sobrescrito)
+    S.acc = (antes==='mobilenet_v2'); $('#swAcc').checked = S.acc;
+    S.modelReady = !!S.model;
+    toast('Falha ao trocar modelo — mantendo o anterior');
+    logEvent('ERRO','troca de modelo falhou ('+((err&&err.message)||err)+')','#FF4E3E');
+  }
+});
 $('#swHC').addEventListener('change', e=>{ document.body.classList.toggle('hc', e.target.checked); speak(e.target.checked?'Alto contraste ativado.':'Alto contraste desativado.'); });
 $('#swBig').addEventListener('change', e=>{ document.body.classList.toggle('bigtype', e.target.checked); speak(e.target.checked?'Texto ampliado.':'Texto normal.'); });
 paintRange($('#rgRate')); paintRange($('#rgSens'));
