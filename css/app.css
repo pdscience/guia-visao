@@ -1394,6 +1394,10 @@ button {
   z-index: 70;
   transform: translateY(105%);
   transition: transform .5s cubic-bezier(.32,.9,.25,1);
+  max-height: 92dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 .sheet.open {
   transform: translateY(0);

@@ -112,7 +112,7 @@
   @keyframes blink{50%{opacity:.25}}
 
   /* ---- sheets ---- */
-  .sheet{position:absolute;inset-inline:0;bottom:0;z-index:70;transform:translateY(105%);transition:transform .5s cubic-bezier(.32,.9,.25,1);}
+  .sheet{position:absolute;inset-inline:0;bottom:0;z-index:70;transform:translateY(105%);transition:transform .5s cubic-bezier(.32,.9,.25,1);max-height:92dvh;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;}
   .sheet.open{transform:translateY(0);}
   #backdrop{position:absolute;inset:0;z-index:60;background:rgba(2,3,6,.6);backdrop-filter:blur(4px);opacity:0;pointer-events:none;transition:opacity .4s;}
   #backdrop.open{opacity:1;pointer-events:auto;}

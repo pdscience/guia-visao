@@ -1,4 +1,4 @@
-const CACHE='guia-visao-v3', MODEL='guia-visao-model-v1';
+const CACHE='guia-visao-v4', MODEL='guia-visao-model-v1';
 const SHELL=['./','./index.html','./css/app.css','./js/app.js','./js/obst.js','./vendor/tf.min.js','./vendor/coco-ssd.min.js','./vendor/mobilenet.min.js','./vendor/knn-classifier.min.js','./vendor/lucide.min.js','./manifest.webmanifest','./icons/icon-192.png','./icons/icon-512.png','./offline.html'];
 self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>Promise.allSettled(SHELL.map(u=>c.add(u)))).then(()=>self.skipWaiting()));});
 self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>![CACHE,MODEL].includes(k)).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));});
