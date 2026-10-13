@@ -143,7 +143,8 @@ function speakNow(text){
   u.onerror = (e)=>{
     if(my!==speakSeq) return;
     S.ttsErr = (e && e.error) || 'erro desconhecido';
-    logEvent('VOZ','ERRO TTS: '+S.ttsErr+' · mic '+(S.listening?(micPaused?'pausado':'ativo'):'off'),'#FF4E3E');
+    const ms = S.speakStart ? Math.round(performance.now()-S.speakStart) : -1;
+    logEvent('VOZ','ERRO TTS: '+S.ttsErr+' · mic '+(S.listening?(micPaused?'pausado':'ativo'):'off')+' · '+ms+'ms · fala='+(speechSynthesis.speaking?'sim':'nao')+' · voz='+(voice?voice.name:'padrão'),'#FF4E3E');
     finishSpeak();
   };
   speechSynthesis.speak(u);
@@ -167,6 +168,7 @@ function speak(text, interrupt=false){
   if(interrupt){
     ttsQueue = text;
     try{ speechSynthesis.cancel(); }catch(e){}
+    logEvent('VOZ','(cancel)','#4a5568');
     // cancel()+speak() imediato silencia o Android; se o onend do cancel não
     // vier (outro bug Android), este fallback fala a fila após 120ms
     setTimeout(()=>{
