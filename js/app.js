@@ -73,7 +73,10 @@ function logEvent(kind, msg, tone='#9DF53C'){
   const t = new Date().toLocaleTimeString('pt-BR',{hour12:false});
   if(tbox){
     const li = document.createElement('li');
-    li.innerHTML = `<span class="text-white/30">${t}</span> <span style="color:${tone}">${kind}</span> <span class="text-white/60">${msg}</span>`;
+    const sT = document.createElement('span'); sT.className = 'text-white/30'; sT.textContent = t;
+    const sK = document.createElement('span'); sK.style.color = tone; sK.textContent = kind;
+    const sM = document.createElement('span'); sM.className = 'text-white/60'; sM.textContent = msg;
+    li.append(sT, ' ', sK, ' ', sM);
     tbox.prepend(li);
     while(tbox.children.length>40) tbox.lastChild.remove();
   }
@@ -697,7 +700,7 @@ async function describe(){
   const local = !list.length
     ? 'Nenhum obstáculo detectado à frente. Caminho livre.'
     : `À sua frente: ${list.slice(0,3).map(d=>`${d.nome} ${d.dir}${d.dist?`, aproximadamente ${String(d.dist).replace('.',',')} metros`:''}`).join('. ')}.`;
-  if(!CloudVision.available()){ speak(local, true); logEvent('DESC','local (nuvem indisponível)'); return; }
+  if(!CloudVision.available()){ speak(local, true); logEvent('DESC','local (nuvem indisponível): ' + local); return; }
   const src = (S.mode==='live') ? ((S.small && S.small.width) ? S.small : cam) : scene;
   toast('Perguntando à nuvem…');
   const r = await CloudVision.describe(src, list);
@@ -868,7 +871,7 @@ $('#swAcc').addEventListener('change', async e=>{
 });
 $('#swCloud').addEventListener('change', e=>{
   CloudVision.setEnabled(e.target.checked);
-  if(e.target.checked && !CloudVision.getKey()){ toast('Cole a chave da API no campo abaixo'); }
+  if(e.target.checked && !CloudVision.getKey()){ toast('Cole a chave da API no campo abaixo'); speak('Ativado, mas falta a chave. Cole a chave da API no campo abaixo.'); }
   else { speak(e.target.checked?'IA na nuvem ativada.':'IA na nuvem desativada.'); }
   logEvent('CFG','ia nuvem '+(e.target.checked?'on':'off'));
 });
