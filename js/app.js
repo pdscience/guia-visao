@@ -99,7 +99,7 @@ function setRisk(level){
 // Android/Chrome também emite o TTS mudo enquanto o SpeechRecognition está ativo,
 // então o microfone é pausado durante a fala e só volta em finishSpeak.
 let voice = null;
-let ttsBusy = false, ttsQueue = null, micPaused = false, speakSeq = 0;
+let ttsBusy = false, ttsQueue = null, micPaused = false, speakSeq = 0, micStop = null;
 function pickVoice(){
   const vs = speechSynthesis.getVoices();
   voice = vs.find(v=>/pt[-_]BR/i.test(v.lang)) || vs.find(v=>v.lang && v.lang.toLowerCase().startsWith('pt')) || null;
@@ -107,9 +107,23 @@ function pickVoice(){
 }
 if('speechSynthesis' in window){ pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
 function pauseMic(){
-  if(!S.listening || micPaused) return;
+  // promessa: resolve só quando o reconhecimento TERMINAR de liberar o áudio.
+  // speak() espera por ela — falar antes disso dá synthesis-failed no Android.
+  if(micStop) return micStop.p;
+  if(!S.listening || micPaused) return Promise.resolve();
   micPaused = true;
-  if(S.recog){ try{ S.recog.stop(); }catch(e){} }
+  if(!S.recog) return Promise.resolve();
+  let finish;
+  const p = new Promise(res=>{
+    let done = false;
+    finish = ()=>{ if(done) return; done = true; setTimeout(res, 150); };  // buffer após o end
+  });
+  micStop = { p, finish };
+  p.then(()=>{ if(micStop && micStop.p === p) micStop = null; });
+  // timeout: Android às vezes não emite 'end' — falar tarde do que calar
+  setTimeout(finish, 700);
+  try{ S.recog.stop(); }catch(e){ finish(); }
+  return p;
 }
 function resumeMic(){
   if(!S.listening || !micPaused) return;
@@ -129,7 +143,7 @@ function speakNow(text){
   u.onerror = (e)=>{
     if(my!==speakSeq) return;
     S.ttsErr = (e && e.error) || 'erro desconhecido';
-    logEvent('VOZ','ERRO TTS: '+S.ttsErr,'#FF4E3E');
+    logEvent('VOZ','ERRO TTS: '+S.ttsErr+' · mic '+(S.listening?(micPaused?'pausado':'ativo'):'off'),'#FF4E3E');
     finishSpeak();
   };
   speechSynthesis.speak(u);
@@ -149,7 +163,7 @@ function finishSpeak(){
 function speak(text, interrupt=false){
   $('#liveAlert').textContent = text;
   if(!S.tts || !('speechSynthesis' in window)) return;
-  pauseMic();
+  const micReady = pauseMic();
   if(interrupt){
     ttsQueue = text;
     try{ speechSynthesis.cancel(); }catch(e){}
@@ -159,12 +173,21 @@ function speak(text, interrupt=false){
       if(ttsQueue == null) return;
       // invalida o onend atrasado da fala cancelada antes de destravar na mao
       if(ttsBusy){ try{ speechSynthesis.cancel(); }catch(e){} speakSeq++; logEvent('VOZ','fala travada, destravada apos 120ms','#FFC53D'); finishSpeak(); }
-      if(!ttsBusy && ttsQueue != null){ const t=ttsQueue; ttsQueue=null; pauseMic(); speakNow(t); }
+      if(!ttsBusy && ttsQueue != null){
+        const t = ttsQueue; ttsQueue = null;
+        micReady.then(()=>{
+          if(ttsBusy){ if(ttsQueue == null) ttsQueue = t; return; }
+          pauseMic(); speakNow(t);
+        });
+      }
     },120);
     return;
   }
   if(ttsBusy){ ttsQueue = text; logEvent('VOZ','na fila (outra fala em curso)','#FFC53D'); return; }  // uma fala por vez: pendente substitui a anterior
-  speakNow(text);
+  micReady.then(()=>{
+    if(ttsBusy){ ttsQueue = text; logEvent('VOZ','na fila (outra fala em curso)','#FFC53D'); return; }
+    pauseMic(); speakNow(text);
+  });
 }
 // watchdog: destrava TTS travado "falando" para nunca calar o app
 setInterval(()=>{
@@ -742,7 +765,7 @@ function setupRecognition(){
     handleCommand(txt);
   };
   r.onerror = e=>{ if(e.error==='not-allowed'){ toast('Permita o microfone para usar comandos de voz'); setListening(false); } };
-  r.onend = ()=>{ if(S.listening && !micPaused){ setTimeout(()=>{ if(S.listening && !micPaused){ try{ r.start(); }catch(e){} } }, 280); } };
+  r.onend = ()=>{ if(micStop) micStop.finish(); if(S.listening && !micPaused){ setTimeout(()=>{ if(S.listening && !micPaused){ try{ r.start(); }catch(e){} } }, 280); } };
   return r;
 }
 function setListening(on, quiet=false){
