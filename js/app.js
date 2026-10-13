@@ -8,7 +8,7 @@ const $ = s => document.querySelector(s);
 const S = {
   mode:'idle',            // idle | live | sim
   running:false,
-  model:null, modelReady:false, acc:false, modelBase:null,
+  model:null, modelReady:false, acc:true, modelBase:null,
   stream:null, track:null, torchOn:false,
   risk:0, closeness:0,
   dets:[], lastFree:true, freeSince:0,
