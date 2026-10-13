@@ -20,6 +20,9 @@ const S = {
   simItems:[], simLast:0,
   wake:null, inferBusy:false,
   knnOn:true, knnReady:false, knnCount:{},
+  // última detecção pessoal: {id, conf, ts}. A memória cobre a alternância de
+  // frames do kNN (fix 2) e a fusão é refeita em TODO frame, não só no frame do kNN.
+  personalHit:null,
 };
 
 const RISK_C = ['#9DF53C','#FFC53D','#FF4E3E'];
@@ -33,11 +36,19 @@ const LABELS = {
   'sports ball':'Bola', kite:'Pipa', 'baseball bat':'Taco de beisebol', 'baseball glove':'Luva de beisebol', skateboard:'Skate', surfboard:'Prancha', 'tennis racket':'Raquete de tênis',
   bottle:'Garrafa', 'wine glass':'Taça', cup:'Copo', fork:'Garfo', knife:'Faca', spoon:'Colher', bowl:'Tigela',
   banana:'Banana', apple:'Maçã', sandwich:'Sanduíche', orange:'Laranja', broccoli:'Brócolis', carrot:'Cenoura', 'hot dog':'Cachorro-quente', pizza:'Pizza', donut:'Rosquinha', cake:'Bolo',
-  chair:'Cadeira', couch:'Sofá', 'potted plant':'Planta', bed:'Cama', 'dining table':'Mesa', toilet:'Vaso sanitário', tv:'Televisão',
+  chair:'Cadeira', couch:'Sofá', 'potted plant':'Jardineira', bed:'Cama', 'dining table':'Mesa', toilet:'Vaso sanitário', tv:'Televisão',
   laptop:'Notebook', mouse:'Mouse', remote:'Controle remoto', keyboard:'Teclado', 'cell phone':'Celular', microwave:'Micro-ondas', oven:'Forno', toaster:'Torradeira', sink:'Pia',
   refrigerator:'Geladeira', book:'Livro', clock:'Relógio', vase:'Vaso de flor', scissors:'Tesoura', 'teddy bear':'Ursinho de pelúcia', 'hair drier':'Secador de cabelo', toothbrush:'Escova de dentes'
 };
-const TALL = new Set(['person','dog','cat','horse','refrigerator','fire hydrant']);
+const TALL = new Set(['person','dog','cat','horse','refrigerator','fire hydrant','traffic light','stop sign','parking meter']);
+// viés de risco por tipo (pesquisa RNIB 2025 + survey Manduchi): veículos e
+// pessoas se movem e causam dano maior; obstáculos de solo (mochila, mala,
+// bola) são a principal causa de queda — 71% relatam calçada irregular
+const RISK_BIAS = {
+  person:1.2, bicycle:1.15, car:1.2, motorcycle:1.2, bus:1.2, truck:1.2, train:1.2,
+  dog:1.1, horse:1.1,
+  backpack:1.05, suitcase:1.05, 'sports ball':1.05,
+};
 const TYPES_SIM = ['person','car','chair','dog','backpack','box'];
 
 /* ---------- boot ---------- */
@@ -77,32 +88,80 @@ function setRisk(level){
 }
 
 /* ---------- voz (TTS) ---------- */
+// Estado próprio de fala: o Android Chrome mente sobre speechSynthesis.speaking
+// (fica preso em true), então NÃO confiamos na API — confiamos em ttsBusy.
+// Android/Chrome também emite o TTS mudo enquanto o SpeechRecognition está ativo,
+// então o microfone é pausado durante a fala e só volta em finishSpeak.
 let voice = null;
+let ttsBusy = false, ttsQueue = null, micPaused = false, speakSeq = 0;
 function pickVoice(){
   const vs = speechSynthesis.getVoices();
   voice = vs.find(v=>/pt[-_]BR/i.test(v.lang)) || vs.find(v=>v.lang && v.lang.toLowerCase().startsWith('pt')) || null;
 }
 if('speechSynthesis' in window){ pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
-function speak(text, interrupt=false){
-  $('#liveAlert').textContent = text;
-  if(!S.tts || !('speechSynthesis' in window)) return;
-  if(interrupt) speechSynthesis.cancel();
-  if(speechSynthesis.speaking && !interrupt) return;
+function pauseMic(){
+  if(!S.listening || micPaused) return;
+  micPaused = true;
+  if(S.recog){ try{ S.recog.stop(); }catch(e){} }
+}
+function resumeMic(){
+  if(!S.listening || !micPaused) return;
+  micPaused = false;
+  // respiro: o Android exige um intervalo entre stop() e start()
+  setTimeout(()=>{ if(S.listening && !micPaused && S.recog){ try{ S.recog.start(); }catch(e){} } }, 350);
+}
+function speakNow(text){
+  const my = ++speakSeq;
   const u = new SpeechSynthesisUtterance(text);
   if(voice) u.voice = voice;
   u.lang = 'pt-BR'; u.rate = S.rate; u.pitch = 1; u.volume = 1;
   S.speakStart = performance.now();
-  u.onend = u.onerror = ()=>{ S.speakStart = 0; };
+  ttsBusy = true;
+  // só o onend da fala ATUAL destrava: um cancel atrasado não pode derrubar a próxima
+  u.onend = u.onerror = ()=>{ if(my === speakSeq) finishSpeak(); };
   speechSynthesis.speak(u);
   S.voiceCount++; $('#statVoice').textContent = S.voiceCount;
   logEvent('VOZ', text, '#9DF53C');
 }
+function finishSpeak(){
+  S.speakStart = 0; ttsBusy = false;
+  if(ttsQueue != null){
+    const t = ttsQueue; ttsQueue = null;
+    // o mic segue pausado até a última fala da fila terminar
+    setTimeout(()=>{ pauseMic(); speakNow(t); }, 60);
+    return;
+  }
+  resumeMic();
+}
+function speak(text, interrupt=false){
+  $('#liveAlert').textContent = text;
+  if(!S.tts || !('speechSynthesis' in window)) return;
+  pauseMic();
+  if(interrupt){
+    ttsQueue = text;
+    try{ speechSynthesis.cancel(); }catch(e){}
+    // cancel()+speak() imediato silencia o Android; se o onend do cancel não
+    // vier (outro bug Android), este fallback fala a fila após 120ms
+    setTimeout(()=>{
+      if(ttsQueue == null) return;
+      // invalida o onend atrasado da fala cancelada antes de destravar na mão
+      if(ttsBusy){ try{ speechSynthesis.cancel(); }catch(e){} speakSeq++; finishSpeak(); }
+      if(!ttsBusy && ttsQueue != null){ const t=ttsQueue; ttsQueue=null; pauseMic(); speakNow(t); }
+    },120);
+    return;
+  }
+  if(ttsBusy){ ttsQueue = text; return; }  // uma fala por vez: pendente substitui a anterior
+  speakNow(text);
+}
 // watchdog: destrava TTS travado "falando" para nunca calar o app
 setInterval(()=>{
   if(!('speechSynthesis' in window)) return;
-  if(speechSynthesis.speaking && S.speakStart && performance.now()-S.speakStart > 8000){
+  if(ttsBusy && S.speakStart && performance.now()-S.speakStart > 8000){
+    const my = speakSeq;
     try{ speechSynthesis.cancel(); }catch(e){}
-    S.speakStart = 0;
+    // só força se a fala travada ainda for a atual (se o onend veio e uma
+    // nova fala já começou, speakSeq mudou e este passo vira no-op)
+    setTimeout(()=>{ if(ttsBusy && speakSeq === my){ speakSeq++; finishSpeak(); } }, 200);
     logEvent('VOZ','TTS destravado (watchdog)','#FFC53D');
   }
 },1000);
@@ -146,8 +205,8 @@ function enrich(p, sw, sh){
   const [x,y,w,h] = p.bbox;
   const cx = x + w/2;
   const area = (w*h)/(sw*sh), hr = h/sh;
-  let score = area*2.4*S.sens;
-  if(TALL.has(p.class)) score = Math.max(score, hr*1.05*S.sens);
+  let score = area*2.4*S.sens*(RISK_BIAS[p.class]||1);
+  if(TALL.has(p.class)) score = Math.max(score, hr*1.05*S.sens*(RISK_BIAS[p.class]||1));
   const risk = score>=0.5 ? 2 : score>=0.18 ? 1 : 0;
   const dir = cx/sw < .4 ? 'à esquerda' : cx/sw > .6 ? 'à direita' : 'à frente';
   const base = TALL.has(p.class) ? hr : Math.sqrt(area);
@@ -155,9 +214,13 @@ function enrich(p, sw, sh){
   dist = dist<2 ? Math.round(dist*10)/10 : Math.round(dist);
   return { cls:p.class, nome:LABELS[p.class]||'Obstáculo', acc:Math.round(p.score*100), bbox:p.bbox, risk, score, dir, dist };
 }
-function phrase(d){ return `${d.nome} ${d.dir}, ${d.risk===2?'muito perto':d.risk===1?'perto':'à distância'}.`; }
+// fala com distância: o cego precisa dos metros para decidir o desvio
+function phrase(d){
+  const dist = (d.dist && d.dist!=='—') ? `${String(d.dist).replace('.',',')} metros, ` : '';
+  return `${d.nome} ${d.dir}, ${dist}${d.risk===2?'muito perto':d.risk===1?'perto':'à distância'}.`;
+}
 
-let lastDetTs = 0;
+let lastDetTs = 0, lastSecSpoke = 0;
 function process(list, sw, sh){
   drawOverlay(list, sw, sh);
   S.detCount += list.length;
@@ -203,6 +266,12 @@ function process(list, sw, sh){
         S.lastSpoke = now; S.lastKey = key;
         speak(phrase(top));
       }
+    }
+    // segundo obstáculo: anuncia de tempos em tempos sem roubar o alerta principal
+    const second = list[1];
+    if(second && now-lastSecSpoke>7000 && now-S.lastSpoke>2500){
+      lastSecSpoke = now;
+      speak(`Atenção: ${phrase(second)}`);
     }
   } else {
     // "caminho livre" só após 7s seguidos sem NADA (nem no bruto): evita
@@ -352,7 +421,36 @@ async function startLive(){
   }
 }
 let lastInfer=0, framesWin=0, fpsT=performance.now();
-let knnTurn = false;
+// ---------- kNN pessoal: inferência em 2º plano ----------
+// O MobileNet leva ~200-400ms. Rodando dentro de S.inferBusy ele atrasava o
+// alerta de COCO do MESMO frame (o process() só era chamado depois dele).
+// Aqui a inferência é AGENDADA antes do bloco de inferência do COCO, mas só
+// EXECUTA num setTimeout(0) — ou seja, depois que o process() do frame já falou.
+let knnBusy=false, knnLast=0;
+const KNN_GAP=340;        // ~1 inferência a cada 340ms (mesma cadência do "1 em 2 frames")
+const PERSONAL_TTL=2000; // o hit pessoal continua válido 2s -> segura a histerese
+function scheduleKnn(){
+  if(knnBusy || !S.running || S.mode!=='live' || !S.knnOn || !S.knnReady) return;
+  const now = performance.now();
+  if(now - knnLast < KNN_GAP) return;
+  knnBusy = true; knnLast = now;
+  setTimeout(async ()=>{
+    try{
+      if(S.running && S.mode==='live' && S.knnOn && S.knnReady){
+        const src = (S.small && S.small.width) ? S.small : cam;
+        const p = await MeuKNn.predictTop(src);
+        if(p) S.personalHit = { id:p.id, conf:p.conf, ts:performance.now() };
+      }
+    }catch(e){}
+    finally{ knnBusy = false; }
+  },0);
+}
+function currentPersonal(now){
+  const h = S.personalHit;
+  if(!h) return null;
+  if(now - h.ts > PERSONAL_TTL){ S.personalHit = null; return null; }
+  return h;
+}
 async function loopLive(){
   if(S.mode!=='live' || !S.running) return;
   const now = performance.now();
@@ -366,19 +464,24 @@ async function loopLive(){
       logEvent('ERRO','câmera sem frames (readyState/videoWidth zerado)','#FF4E3E');
     }
   } else { S.noFrameSince = 0; if(S.noFrameWarned){ S.noFrameWarned = false; setChip('DETECTANDO'); } }
+  // agenda a inferência do kNN ANTES do S.inferBusy: ela roda em background e
+  // o alerta de COCO deste frame nunca espera pelo MobileNet
+  scheduleKnn();
   if(cam.readyState>=2 && S.modelReady && !S.inferBusy && now-lastInfer>170){
     S.inferBusy = true; lastInfer = now;
     try{
       let src = cam, sw = cam.videoWidth, sh = cam.videoHeight;
       if(S.small && S.sctx && S.sw){ S.sctx.drawImage(cam, 0, 0, S.sw, S.sh); src = S.small; sw = S.sw; sh = S.sh; }
-      const preds = await S.model.detect(src, 10, 0.40);
+      const preds = await S.model.detect(src, 10, 0.35);
       let bt = null;
       for(const p of preds){ if(!bt || p.score>bt.score) bt = p; }
       S.lastRaw = { n:preds.length, top: bt ? (LABELS[bt.class]||bt.class)+' '+Math.round(bt.score*100)+'%' : 'nada' };
       let rel = preds.filter(p=>LABELS[p.class]).map(p=>enrich(p, sw, sh)).sort((a,b)=>b.score-a.score);
-      knnTurn = !knnTurn;
-      if(S.knnOn && S.knnReady && knnTurn){
-        try{ rel = fusePersonal(rel, sw, sh, await MeuKNn.predictTop(src)); }catch(e){}
+      // fusão em TODO frame (não só no frame do kNN): a memória S.personalHit
+      // segura o hit entre inferências, então a histerese de 2 frames volta a ver
+      // a MESMA key em frames consecutivos — senão o obstáculo pessoal nunca falava
+      if(S.knnOn && S.knnReady){
+        try{ rel = fusePersonal(rel, sw, sh, currentPersonal(performance.now())); }catch(e){}
       }
       process(rel, sw, sh);
     }catch(e){}
@@ -517,8 +620,9 @@ async function start(mode){
     const el=$('#statTime'); if(el) el.textContent=`${m}:${s}`;
   },1000);
   try{ S.wake = await navigator.wakeLock?.request('screen'); }catch(e){}
-  speak(mode==='live' ? 'Guia Visão ativado. Boa caminhada.' : 'Modo demonstração ativado.', true);
+  // mic primeiro, fala depois: speak() pausa a escuta durante a fala (bug Android TTS×mic)
   if(S.autoVoice && !S.listening){ setListening(true, true); }
+  speak(mode==='live' ? 'Guia Visão ativado. Boa caminhada.' : 'Modo demonstração ativado.', true);
   if(mode==='live') startLive(); else startSim();
   logEvent('START', mode==='live'?'detecção via câmera':'modo demonstração');
 }
@@ -546,7 +650,7 @@ function stopAll(){
   $('#alertIconDanger').classList.add('hidden');
   clearInterval(S.timer);
   if(S.wake){ try{S.wake.release();}catch(e){} S.wake=null; }
-  S.lastDets=[]; S.stableKey=''; S.stableCount=0; S.lastPan=0; S.closeness=0; S.noFrameSince=0; S.noFrameWarned=false; S.lastFree=true; S.lastRaw={n:0,top:'nada'}; S.small=null;
+  S.lastDets=[]; S.stableKey=''; S.stableCount=0; S.lastPan=0; S.closeness=0; S.noFrameSince=0; S.noFrameWarned=false; S.lastFree=true; S.lastRaw={n:0,top:'nada'}; S.small=null; S.personalHit=null;
   logEvent('STOP','detecção pausada','#FFC53D');
 }
 
@@ -594,7 +698,7 @@ function setupRecognition(){
     handleCommand(txt);
   };
   r.onerror = e=>{ if(e.error==='not-allowed'){ toast('Permita o microfone para usar comandos de voz'); setListening(false); } };
-  r.onend = ()=>{ if(S.listening){ setTimeout(()=>{ if(S.listening){ try{ r.start(); }catch(e){} } }, 280); } };
+  r.onend = ()=>{ if(S.listening && !micPaused){ setTimeout(()=>{ if(S.listening && !micPaused){ try{ r.start(); }catch(e){} } }, 280); } };
   return r;
 }
 function setListening(on, quiet=false){
@@ -605,11 +709,16 @@ function setListening(on, quiet=false){
   if(on){
     if(!S.recog){ S.recog = setupRecognition(); }
     if(!S.recog){ toast('Reconhecimento de voz não suportado neste navegador'); S.listening=false; b.classList.remove('listening'); return; }
-    try{ S.recog.start(); }catch(e){}
-    if(!quiet){ speak('Escutando. Diga um comando.'); toast('Escutando comandos de voz…'); }
-    else { toast('Escutando comandos de voz…'); }
-    logEvent('MIC','reconhecimento de voz ativado');
+    const kick = ()=>{ try{ S.recog.start(); }catch(e){} logEvent('MIC','reconhecimento de voz ativado'); };
+    if(!quiet){
+      // fala ANTES de abrir o mic: se o recognition arrancar junto, o Android
+      // engole a fala. 1500ms cobre o anúncio "Escutando…" antes do start().
+      speak('Escutando. Diga um comando.');
+      setTimeout(kick, 1500);
+    } else { kick(); }
+    toast('Escutando comandos de voz…');
   } else {
+    micPaused = false;
     if(S.recog){ try{ S.recog.stop(); }catch(e){} }
     if(!quiet) speak('Comandos de voz desativados.');
   }
@@ -700,7 +809,7 @@ $('#swVoice').addEventListener('change', e=>{ S.tts=e.target.checked; if(S.tts) 
 $('#swAutoVoice').addEventListener('change', e=>{ S.autoVoice=e.target.checked; logEvent('CFG','escuta automática '+(S.autoVoice?'on':'off')); if(S.autoVoice && !S.listening && S.running) setListening(true,true); if(!S.autoVoice && S.listening) setListening(false,true); });
 $('#swVib').addEventListener('change', e=>{ S.vib=e.target.checked; if(S.vib) vibrate(60); logEvent('CFG','vibração '+(S.vib?'on':'off')); });
 $('#swSon').addEventListener('change', e=>{ S.son=e.target.checked; if(S.son) beep(880); logEvent('CFG','sonificação '+(S.son?'on':'off')); });
-$('#swKNn').addEventListener('change', e=>{ S.knnOn=e.target.checked; logEvent('CFG','meus obstáculos '+(S.knnOn?'on':'off')); });
+$('#swKNn').addEventListener('change', e=>{ S.knnOn=e.target.checked; if(!S.knnOn) S.personalHit=null; logEvent('CFG','meus obstáculos '+(S.knnOn?'on':'off')); });
 $('#swHC').addEventListener('change', e=>{ document.body.classList.toggle('hc', e.target.checked); speak(e.target.checked?'Alto contraste ativado.':'Alto contraste desativado.'); });
 $('#swBig').addEventListener('change', e=>{ document.body.classList.toggle('bigtype', e.target.checked); speak(e.target.checked?'Texto ampliado.':'Texto normal.'); });
 paintRange($('#rgRate')); paintRange($('#rgSens'));

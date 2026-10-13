@@ -94,7 +94,22 @@ const MeuKNn = {
   },
 };
 /* js/obst.js — append treino (presets PT + captura 1/s + voz) */
-const PRESETS = ['Portão', 'Escada', 'Porta', 'Muro', 'Janela'];
+// catálogo curado — pesquisa RNIB "In My Way" 2025 (~1200 cegos/pouco visuais)
+// e survey Manduchi (300+ cegos, colisões em altura de cabeça/tronco + quedas).
+// ordem = prioridade real: chão/queda primeiro, depois mobiliário urbano,
+// obstáculos móveis/obras e o residencial brasileiro. Para reconhecer na
+// câmera sem treino, use os itens que o COCO-SSD já detecta (pessoa, carro,
+// bicicleta, cachorro, banco, mala, mochila, cadeira, jardineira, vaso).
+const PRESETS = [
+  // chão / mudança de nível — 71% relatam calçada irregular como barreira
+  'Buraco','Degrau','Calçada quebrada','Rampa irregular',
+  // mobiliário urbano — colisão, muitas vezes em altura de cabeça/tronco
+  'Poste','Lixeira','Grade','Jardineira','Banco de praça',
+  // obstáculos móveis e obras — 56% relatam sacos, quadros e tapumes
+  'Tapume de obra','Saco de lixo','Cone','Scooter',
+  // residenciais / muito comuns no Brasil
+  'Portão','Muro','Escada','Porta',
+];
 async function startTraining(nome, camEl, onTick){
   // o carregamento do MobileNet é assíncrono em segundo plano: garante os pesos antes de fotografar
   try{ await MeuKNn.ensureModel(); }catch(e){ throw new Error('Sem o modelo MobileNet (rode o app com internet uma vez).'); }
@@ -128,8 +143,17 @@ async function startTraining(nome, camEl, onTick){
 /* js/obst.js — fusão (label só, sem cantos na tela cheia) */
 function fusePersonal(rel, sw, sh, pred){
   if(!pred) return rel;
+  // Regra de ouro: um item pessoal NUNCA rebaixa um item COCO com risk maior.
+  // O kNN classifica a tela inteira e não tem bbox real, então o conf (0.6..1.0)
+  // não é comparável ao score geométrico do COCO: só entra quando o frame não
+  // tem NADA de risk>=1. Com isso "Pessoa muito perto" (risk 2) nunca é
+  // rebaixado para risk 1, e o sonar/alerta continuam refletindo a ameaça real.
+  if(rel.some(d => d.risk >= 1)) return rel;
   const nome = MeuKNn.nomes[pred.id] || 'Meu obstáculo';
-  rel.unshift({ cls:'meu:'+pred.id, nome, acc:Math.round(pred.conf*100), bbox:[0,0,sw,sh], risk:1, score:pred.conf, dir:'à frente', dist:'—', personal:true });
+  rel.push({ cls:'meu:'+pred.id, nome, acc:Math.round(pred.conf*100), bbox:[0,0,sw,sh], risk:1, score:pred.conf, dir:'à frente', dist:'—', personal:true });
+  // ordena por risk/score no fim: list[0] é o top do process(), então o mais
+  // grave precisa ser o primeiro (personal risk 1 fica acima dos risk 0 do COCO)
+  rel.sort((a,b)=> b.risk - a.risk || b.score - a.score);
   return rel;
 }
 /* js/obst.js — lista + presets + fiação (mesma Task 3) */
@@ -166,7 +190,7 @@ async function renderMyObst(){
     const nome = ($('#myObstName').value || '').trim();
     if(!nome){ speak('Diga ou digite o nome do obstáculo primeiro.', true); return; }
     if(!S.running || S.mode !== 'live'){ speak('Ative a câmera primeiro para fotografar.', true); return; }
-    if(all.length >= 8){ speak('Limite de 8 obstáculos. Apague um para cadastrar outro.', true); return; }
+    if(all.length >= 12){ speak('Limite de 12 obstáculos. Apague um para cadastrar outro.', true); return; }
     $('#btnTrainStart').disabled = true;
     try{ await startTraining(nome, cam, (i, n)=>{ $('#trainStatus').textContent = `FOTO ${i}/${n}`; }); }
     catch(e){ speak('Falha ao fotografar. Tente de novo.', true); }
