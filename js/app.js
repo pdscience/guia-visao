@@ -692,12 +692,17 @@ function diagnose(){
   logEvent('DIAG', linha);
   toast(linha); // no celular a telemetria nao aparece: o toast leva tudo junto
 }
-function describe(){
+async function describe(){
   const list = S.lastDets || [];
-  if(!list.length){ speak('Nenhum obstáculo detectado à frente. Caminho livre.', true); logEvent('DESC','cena vazia'); return; }
-  const parts = list.slice(0,3).map(d=>`${d.nome} ${d.dir}${d.dist?`, aproximadamente ${String(d.dist).replace('.',',')} metros`:''}`);
-  speak(`À sua frente: ${parts.join('. ')}.`, true);
-  logEvent('DESC', parts.join(' · '));
+  const local = !list.length
+    ? 'Nenhum obstáculo detectado à frente. Caminho livre.'
+    : `À sua frente: ${list.slice(0,3).map(d=>`${d.nome} ${d.dir}${d.dist?`, aproximadamente ${String(d.dist).replace('.',',')} metros`:''}`).join('. ')}.`;
+  if(!CloudVision.available()){ speak(local, true); logEvent('DESC','local (nuvem indisponível)'); return; }
+  const src = (S.mode==='live') ? ((S.small && S.small.width) ? S.small : cam) : scene;
+  toast('Perguntando à nuvem…');
+  const r = await CloudVision.describe(src, list);
+  if(r.ok){ speak(r.text, true); logEvent('DESC','nuvem: '+r.text); }
+  else { speak(local+' Nuvem: '+r.err+'.', true); logEvent('DESC','nuvem falhou ('+r.err+'), usando local','#FFC53D'); }
 }
 // guardar últimas detecções live
 const _process = process;
@@ -861,9 +866,20 @@ $('#swAcc').addEventListener('change', async e=>{
     logEvent('ERRO','troca de modelo falhou ('+((err&&err.message)||err)+')','#FF4E3E');
   }
 });
+$('#swCloud').addEventListener('change', e=>{
+  CloudVision.setEnabled(e.target.checked);
+  if(e.target.checked && !CloudVision.getKey()){ toast('Cole a chave da API no campo abaixo'); }
+  else { speak(e.target.checked?'IA na nuvem ativada.':'IA na nuvem desativada.'); }
+  logEvent('CFG','ia nuvem '+(e.target.checked?'on':'off'));
+});
+$('#cloudKey').addEventListener('change', e=>{
+  CloudVision.setKey(e.target.value.trim());
+  toast(CloudVision.getKey() ? 'Chave salva neste aparelho' : 'Chave removida');
+});
 $('#swHC').addEventListener('change', e=>{ document.body.classList.toggle('hc', e.target.checked); speak(e.target.checked?'Alto contraste ativado.':'Alto contraste desativado.'); });
 $('#swBig').addEventListener('change', e=>{ document.body.classList.toggle('bigtype', e.target.checked); speak(e.target.checked?'Texto ampliado.':'Texto normal.'); });
 paintRange($('#rgRate')); paintRange($('#rgSens'));
+$('#swCloud').checked = CloudVision.isEnabled(); $('#cloudKey').value = CloudVision.getKey();
 
 /* stats */
 setInterval(()=>{
