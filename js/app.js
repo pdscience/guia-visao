@@ -42,6 +42,7 @@ const LABELS = {
   laptop:'Notebook', mouse:'Mouse', remote:'Controle remoto', keyboard:'Teclado', 'cell phone':'Celular', microwave:'Micro-ondas', oven:'Forno', toaster:'Torradeira', sink:'Pia',
   refrigerator:'Geladeira', book:'Livro', clock:'Relógio', vase:'Vaso de flor', scissors:'Tesoura', 'teddy bear':'Ursinho de pelúcia', 'hair drier':'Secador de cabelo', toothbrush:'Escova de dentes'
 };
+Vigia.init(LABELS);
 const TALL = new Set(['person','dog','cat','horse','refrigerator','fire hydrant','traffic light','stop sign','parking meter']);
 // viés de risco por tipo (pesquisa RNIB 2025 + survey Manduchi): veículos e
 // pessoas se movem e causam dano maior; obstáculos de solo (mochila, mala,
@@ -229,7 +230,8 @@ function enrich(p, sw, sh){
 // fala com distância: o cego precisa dos metros para decidir o desvio
 function phrase(d){
   const dist = (d.dist && d.dist!=='—') ? `${String(d.dist).replace('.',',')} metros, ` : '';
-  return `${d.nome} ${d.dir}, ${dist}${d.risk===2?'muito perto':d.risk===1?'perto':'à distância'}.`;
+  const prio = Vigia.has(d.cls) ? 'Prioridade: ' : '';
+  return `${prio}${d.nome} ${d.dir}, ${dist}${d.risk===2?'muito perto':d.risk===1?'perto':'à distância'}.`;
 }
 
 let lastDetTs = 0, lastSecSpoke = 0;
@@ -237,6 +239,7 @@ function process(list, sw, sh){
   drawOverlay(list, sw, sh);
   S.detCount += list.length;
   const top = list[0] || null;
+  const isPri = top && Vigia.has(top.cls);
   const risk = top ? top.risk : 0;
   setRisk(risk);
   S.closeness = top ? Math.min(1, top.score/0.5) : 0;
@@ -249,7 +252,8 @@ function process(list, sw, sh){
     lastDetTs = now; S.lastFree = false;
     $('#alertTitle').textContent = `${top.nome} ${top.dir}`;
     $('#alertSub').textContent = `${top.risk===2?'MUITO PERTO':top.risk===1?'PERTO':'À DISTÂNCIA'} · ≈ ${String(top.dist).replace('.',',')} m · ${top.acc}%`;
-    $('#alertCard').setAttribute('aria-label','Repetir último alerta: '+$('#alertTitle').textContent+'. '+$('#alertSub').textContent);
+    $('#alertCard').setAttribute('aria-label','Repetir último alerta: '+(isPri?'Prioridade: ':'')+$('#alertTitle').textContent+'. '+$('#alertSub').textContent);
+    $('#alertCard').style.outline = isPri ? '2px solid #FFC53D' : '';
     $('#alertCard').classList.remove('opacity-70');
     $('#alertIconOk').classList.toggle('hidden', risk!==0);
     $('#alertIconWarn').classList.toggle('hidden', risk!==1);
@@ -258,7 +262,7 @@ function process(list, sw, sh){
     const key = top.cls+top.dir+(top.risk>=1?top.risk:0);
     // histerese: exige 2 frames estáveis com a mesma chave antes de trocar o anúncio
     if(key===S.stableKey){ S.stableCount++; } else { S.stableKey=key; S.stableCount=1; }
-    const stable = S.stableCount>=2;
+    const stable = isPri ? S.stableCount>=1 : S.stableCount>=2;
     if(!stable && key!==S.lastKey) return;
     const isNew = key!==S.lastKey;
     if(top.risk===2){
@@ -270,20 +274,21 @@ function process(list, sw, sh){
     } else if(top.risk===1){
       if((isNew && now-S.lastSpoke>1200) || now-S.lastSpoke>6000){
         S.lastSpoke = now; S.lastKey = key;
-        speak(phrase(top), isNew); vibrate(70);
-      } else if(isNew){ vibrate(70); }
+        speak(phrase(top), isNew); vibrate(isPri?[90,60,90]:70);
+      } else if(isNew){ vibrate(isPri?[90,60,90]:70); }
     } else {
-      // risco 0 (distante): repete o nome a cada 8s enquanto estiver visível
-      if((isNew && now-S.lastSpoke>2000) || now-S.lastSpoke>8000){
+      // risco 0 (distante): repete o nome a cada 8s (4s se prioridade)
+      if((isNew && now-S.lastSpoke>2000) || now-S.lastSpoke>(isPri?4000:8000)){
         S.lastSpoke = now; S.lastKey = key;
         speak(phrase(top));
-      }
+        if(isPri) vibrate(70);
+      } else if(isPri && isNew){ vibrate(70); }
     }
     // segundo obstáculo: anuncia de tempos em tempos sem roubar o alerta principal
-    const second = list[1];
+    const second = list.slice(1).find(d=>Vigia.has(d.cls)) || list[1];
     if(second && now-lastSecSpoke>7000 && now-S.lastSpoke>2500){
       lastSecSpoke = now;
-      speak(`Atenção: ${phrase(second)}`);
+      speak(Vigia.has(second.cls) ? phrase(second) : `Atenção: ${phrase(second)}`);
     }
   } else {
     // "caminho livre" só após 7s seguidos sem NADA (nem no bruto): evita
@@ -294,6 +299,7 @@ function process(list, sw, sh){
       $('#alertTitle').textContent = 'Caminho livre';
       $('#alertSub').textContent = 'NENHUM OBSTÁCULO À FRENTE';
       $('#alertCard').setAttribute('aria-label','Repetir último alerta: '+$('#alertTitle').textContent+'. '+$('#alertSub').textContent);
+      $('#alertCard').style.outline = '';
       $('#alertCard').classList.add('opacity-70');
       $('#alertIconOk').classList.remove('hidden');
       $('#alertIconWarn').classList.add('hidden');
@@ -764,6 +770,7 @@ function setListening(on, quiet=false){
 function handleCommand(t){
   const has = (...ws)=>ws.some(w=>t.includes(w));
   if(has('socorro','sos','emergência','emergencia','ajuda urgente')){ triggerSOS(); }
+  else if(has('vigiar','lista de vigilância','lista de vigilancia','o que estou vigiando')){ handleVigia(t); }
   else if(has('parar','pausar','desligar','stop')){ if(S.running){ stopAll(); speak('Detecção pausada.'); } else speak('A detecção já está pausada.'); }
   else if(has('iniciar','começar','ligar','inicia')){ if(!S.running) start('live'); else speak('A detecção já está ativa.'); }
   else if(has('demonstra','demo','simula')){ if(!S.running) start('sim'); else speak('Já estou em funcionamento.'); }
@@ -773,8 +780,41 @@ function handleCommand(t){
   else if(has('rápido','rapido')){ setRate(Math.min(1.5,S.rate+0.15)); speak('Fala mais rápida.'); }
   else if(has('devagar','lento','lenta')){ setRate(Math.max(0.6,S.rate-0.15)); speak('Fala mais devagar.'); }
   else if(has('diagnóstico','diagnostico','status do sistema')){ diagnose(); }
-  else if(has('ajuda','comandos')){ speak('Você pode dizer: iniciar, parar, o que tem à frente, repetir, lanterna, diagnóstico, mais rápido, mais devagar.', true); openSheet('sheetHelp'); }
+  else if(has('ajuda','comandos')){ speak('Você pode dizer: iniciar, parar, o que tem à frente, repetir, vigiar, lista de vigilância, lanterna, diagnóstico, mais rápido, mais devagar.', true); openSheet('sheetHelp'); }
   else { speak('Comando não reconhecido. Diga ajuda para ouvir as opções.', true); }
+}
+
+/* ---------- lista de vigilância (prioridade nos alertas) ---------- */
+function handleVigia(t){
+  const n = t.normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  if(n.includes('lista de vigilancia') || n.includes('o que estou vigiando')){
+    const l = Vigia.all().map(c=>LABELS[c]||c);
+    speak(l.length ? 'Na lista de vigilância: '+l.join(', ')+'.' : 'A lista de vigilância está vazia.', true);
+    logEvent('VIGIA','lista: '+(l.length ? l.join(', ') : 'vazia'));
+    return;
+  }
+  const rm = n.match(/^(?:parar de vigiar|deixar de vigiar|nao vigiar(?: mais)?)\s+(.+)$/);
+  if(rm){
+    const nome = rm[1].trim();
+    const cls = Vigia.findByName(nome);
+    if(!cls){ speak('Não conheço "'+nome+'". Diga lista de vigilância para ouvir o que está marcado.', true); return; }
+    if(Vigia.remove(cls)){ speak(LABELS[cls]+' saiu da lista de vigilância.'); logEvent('VIGIA','- '+LABELS[cls]); }
+    else speak(LABELS[cls]+' não estava na lista.');
+    return;
+  }
+  const add = n.match(/^vigiar\s+(.+)$/);
+  if(add){
+    const nome = add[1].trim();
+    const cls = Vigia.findByName(nome);
+    if(!cls){
+      speak('Não conheço "'+nome+'". Vigiar funciona com objetos que a câmera já reconhece — por exemplo: pessoa, cachorro, bicicleta, carro, cavalo, cadeira.', true);
+      return;
+    }
+    if(Vigia.add(cls)){ speak(LABELS[cls]+' entrou na lista de vigilância. Agora recebe prioridade nos alertas.'); logEvent('VIGIA','+ '+LABELS[cls]); }
+    else speak(LABELS[cls]+' já está na lista de vigilância.');
+    return;
+  }
+  speak('Para vigiar, diga: vigiar cachorro. Para parar: parar de vigiar cachorro. Para ouvir a lista: lista de vigilância.', true);
 }
 
 /* ---------- sheets ---------- */

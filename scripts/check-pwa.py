@@ -3,7 +3,7 @@ import json, pathlib, re, sys
 root = pathlib.Path(__file__).resolve().parents[1]
 html = (root/"index.html").read_text()
 bad = [u for u in ["cdn.jsdelivr.net/npm/@tailwindcss/browser", "cdn.jsdelivr.net/npm/@tensorflow", "unpkg.com/lucide"] if u in html]
-REQUIRED = ["css/app.css","js/app.js","js/obst.js","js/cloud.js","vendor/tf.min.js","vendor/coco-ssd.min.js","vendor/mobilenet.min.js","vendor/knn-classifier.min.js","vendor/lucide.min.js","manifest.webmanifest","icons/icon-192.png","icons/icon-512.png"]
+REQUIRED = ["css/app.css","js/app.js","js/obst.js","js/cloud.js","js/vigia.js","vendor/tf.min.js","vendor/coco-ssd.min.js","vendor/mobilenet.min.js","vendor/knn-classifier.min.js","vendor/lucide.min.js","manifest.webmanifest","icons/icon-192.png","icons/icon-512.png"]
 missing = [p for p in REQUIRED if not (root/p).exists()]
 print("BAD_CDN:", bad or "none")
 print("MISSING:", missing or "none")
