@@ -20,6 +20,8 @@ const S = {
   simItems:[], simLast:0,
   wake:null, inferBusy:false,
   knnOn:true, knnReady:false, knnCount:{},
+  // diagnostico: ultimo erro de fala (TTS) e de inferencia (IA)
+  ttsErr:null, inferErr:null, inferErrLogged:false,
   // última detecção pessoal: {id, conf, ts}. A memória cobre a alternância de
   // frames do kNN (fix 2) e a fusão é refeita em TODO frame, não só no frame do kNN.
   personalHit:null,
@@ -97,6 +99,7 @@ let ttsBusy = false, ttsQueue = null, micPaused = false, speakSeq = 0;
 function pickVoice(){
   const vs = speechSynthesis.getVoices();
   voice = vs.find(v=>/pt[-_]BR/i.test(v.lang)) || vs.find(v=>v.lang && v.lang.toLowerCase().startsWith('pt')) || null;
+  logEvent('VOZ','vozes do sistema: '+vs.length+' · escolhida: '+(voice?voice.name:'padrão'),'#8ab4ff');
 }
 if('speechSynthesis' in window){ pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
 function pauseMic(){
@@ -117,8 +120,14 @@ function speakNow(text){
   u.lang = 'pt-BR'; u.rate = S.rate; u.pitch = 1; u.volume = 1;
   S.speakStart = performance.now();
   ttsBusy = true;
-  // só o onend da fala ATUAL destrava: um cancel atrasado não pode derrubar a próxima
-  u.onend = u.onerror = ()=>{ if(my === speakSeq) finishSpeak(); };
+  // so o onend/onerror da fala ATUAL destrava: um cancel atrasado nao derruba a proxima
+  u.onend = ()=>{ if(my===speakSeq){ S.speakStart=0; logEvent('VOZ','fim da fala ok','#4a5568'); finishSpeak(); } };
+  u.onerror = (e)=>{
+    if(my!==speakSeq) return;
+    S.ttsErr = (e && e.error) || 'erro desconhecido';
+    logEvent('VOZ','ERRO TTS: '+S.ttsErr,'#FF4E3E');
+    finishSpeak();
+  };
   speechSynthesis.speak(u);
   S.voiceCount++; $('#statVoice').textContent = S.voiceCount;
   logEvent('VOZ', text, '#9DF53C');
@@ -144,13 +153,13 @@ function speak(text, interrupt=false){
     // vier (outro bug Android), este fallback fala a fila após 120ms
     setTimeout(()=>{
       if(ttsQueue == null) return;
-      // invalida o onend atrasado da fala cancelada antes de destravar na mão
-      if(ttsBusy){ try{ speechSynthesis.cancel(); }catch(e){} speakSeq++; finishSpeak(); }
+      // invalida o onend atrasado da fala cancelada antes de destravar na mao
+      if(ttsBusy){ try{ speechSynthesis.cancel(); }catch(e){} speakSeq++; logEvent('VOZ','fala travada, destravada apos 120ms','#FFC53D'); finishSpeak(); }
       if(!ttsBusy && ttsQueue != null){ const t=ttsQueue; ttsQueue=null; pauseMic(); speakNow(t); }
     },120);
     return;
   }
-  if(ttsBusy){ ttsQueue = text; return; }  // uma fala por vez: pendente substitui a anterior
+  if(ttsBusy){ ttsQueue = text; logEvent('VOZ','na fila (outra fala em curso)','#FFC53D'); return; }  // uma fala por vez: pendente substitui a anterior
   speakNow(text);
 }
 // watchdog: destrava TTS travado "falando" para nunca calar o app
@@ -484,11 +493,21 @@ async function loopLive(){
         try{ rel = fusePersonal(rel, sw, sh, currentPersonal(performance.now())); }catch(e){}
       }
       process(rel, sw, sh);
-    }catch(e){}
+    }catch(e){
+      // registra UMA vez o erro de inferencia (antes era engolido e o app
+      // parecia "sem reconhecimento" sem nenhuma pista)
+      S.inferErr = (e && (e.message || e.name)) || String(e);
+      if(!S.inferErrLogged){ S.inferErrLogged = true; logEvent('ERRO','inferência falhou: '+S.inferErr,'#FF4E3E'); }
+    }
     S.inferBusy=false;
   }
   framesWin++;
-  if(now-fpsT>1000){ setChip('DETECTANDO', framesWin); framesWin=0; fpsT=now; }
+  if(now-fpsT>1000){
+    setChip('DETECTANDO', framesWin);
+    // chip tambem mostra quantos objetos a IA esta vendo AGORA (visivel no celular)
+    $('#chipFps').textContent = framesWin+' FPS · '+(S.lastRaw?S.lastRaw.n:0)+' OBJ';
+    framesWin=0; fpsT=now;
+  }
   requestAnimationFrame(loopLive);
 }
 
@@ -659,8 +678,12 @@ function diagnose(){
   const r = S.lastRaw || {n:0, top:'nada ainda'};
   const v = (cam.videoWidth||0)+' por '+(cam.videoHeight||0);
   const kp = Object.keys(S.knnCount||{}).filter(k=>k!=='fundo').length;
-  speak(`Diagnóstico. Modelo ${S.modelReady?'carregado':'não carregado'}. Vídeo ${v}. Última análise: ${r.n} detecções, melhor: ${r.top}. ${kp} obstáculos pessoais carregados.`, true);
-  logEvent('DIAG', `modelo=${S.modelReady} video=${v} raw=${r.n} top=${r.top} knn=${kp}`);
+  const voz = voice ? voice.name : 'padrão do sistema';
+  const tts = !('speechSynthesis' in window) ? 'indisponível' : (ttsBusy ? 'ocupado' : 'livre');
+  const linha = `modelo=${S.modelReady} video=${v} raw=${r.n} top=${r.top} knn=${kp} tts=${tts} errVoz=${S.ttsErr||'-'} errIA=${S.inferErr||'-'} voz=${voz} mic=${S.listening?'on':'off'}${micPaused?'(pausado)':''}`;
+  speak(`Diagnóstico. Modelo ${S.modelReady?'carregado':'não carregado'}. Vídeo ${v}. Análise bruta: ${r.n} detecções, melhor: ${r.top}. ${kp} obstáculos pessoais. Voz: ${voz}. TTS: ${tts}. Último erro de voz: ${S.ttsErr||'nenhum'}. Último erro de visão: ${S.inferErr||'nenhum'}.`, true);
+  logEvent('DIAG', linha);
+  toast(linha); // no celular a telemetria nao aparece: o toast leva tudo junto
 }
 function describe(){
   const list = S.lastDets || [];
