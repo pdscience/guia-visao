@@ -21,7 +21,7 @@ const S = {
   wake:null, inferBusy:false,
   knnOn:true, knnReady:false, knnCount:{},
   // diagnostico: ultimo erro de fala (TTS) e de inferencia (IA)
-  ttsErr:null, inferErr:null, inferErrLogged:false,
+  ttsErr:null, ttsNoVoiceLogged:false, inferErr:null, inferErrLogged:false,
   // última detecção pessoal: {id, conf, ts}. A memória cobre a alternância de
   // frames do kNN (fix 2) e a fusão é refeita em TODO frame, não só no frame do kNN.
   personalHit:null,
@@ -100,10 +100,28 @@ function setRisk(level){
 // então o microfone é pausado durante a fala e só volta em finishSpeak.
 let voice = null;
 let ttsBusy = false, ttsQueue = null, micPaused = false, speakSeq = 0, micStop = null;
+function getVoicesSafe(){
+  try{ return speechSynthesis.getVoices() || []; }catch(e){ return []; }
+}
+function escolherVoz(vs){
+  return vs.find(v=>/pt[-_]BR/i.test(v.lang)) || vs.find(v=>v.lang && v.lang.toLowerCase().startsWith('pt')) || null;
+}
 function pickVoice(){
-  const vs = speechSynthesis.getVoices();
-  voice = vs.find(v=>/pt[-_]BR/i.test(v.lang)) || vs.find(v=>v.lang && v.lang.toLowerCase().startsWith('pt')) || null;
+  const vs = getVoicesSafe();
+  voice = escolherVoz(vs);
   logEvent('VOZ','vozes do sistema: '+vs.length+' · escolhida: '+(voice?voice.name:'padrão'),'#8ab4ff');
+}
+// no Linux o catálogo pode chegar depois do load: espera as vozes antes do retry
+function esperarVozes(cb, max=1200){
+  if(getVoicesSafe().length) return cb();
+  let done=false;
+  const fim=()=>{ if(done) return; done=true; cb(); };
+  const t=setTimeout(fim, max);
+  try{
+    speechSynthesis.addEventListener('voiceschanged', ()=>{
+      if(getVoicesSafe().length){ clearTimeout(t); fim(); }
+    }, {once:true});
+  }catch(e){}
 }
 if('speechSynthesis' in window){ pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
 function pauseMic(){
@@ -131,20 +149,46 @@ function resumeMic(){
   // respiro: o Android exige um intervalo entre stop() e start()
   setTimeout(()=>{ if(S.listening && !micPaused && S.recog){ try{ S.recog.start(); }catch(e){} } }, 350);
 }
-function speakNow(text){
+function speakNow(text, retry=false){
   const my = ++speakSeq;
   const u = new SpeechSynthesisUtterance(text);
-  if(voice) u.voice = voice;
+  // a voz é escolhida no momento da fala: no Linux o catálogo chega atrasado
+  const vs = getVoicesSafe();
+  if(vs.length) voice = escolherVoz(vs);
+  if(voice){
+    // voz inválida (catálogo trocou) não pode derrubar a fala: deixa o engine escolher
+    try{ u.voice = voice; }catch(e){ voice = null; }
+  }
   u.lang = 'pt-BR'; u.rate = S.rate; u.pitch = 1; u.volume = 1;
   S.speakStart = performance.now();
   ttsBusy = true;
   // so o onend/onerror da fala ATUAL destrava: um cancel atrasado nao derruba a proxima
-  u.onend = ()=>{ if(my===speakSeq){ S.speakStart=0; logEvent('VOZ','fim da fala ok','#4a5568'); finishSpeak(); } };
+  u.onend = ()=>{ if(my===speakSeq){ S.speakStart=0; S.ttsErr=null; logEvent('VOZ','fim da fala ok','#4a5568'); finishSpeak(); } };
   u.onerror = (e)=>{
     if(my!==speakSeq) return;
-    S.ttsErr = (e && e.error) || 'erro desconhecido';
+    const err = (e && e.error) || 'erro desconhecido';
+    S.ttsErr = err;
     const ms = S.speakStart ? Math.round(performance.now()-S.speakStart) : -1;
-    logEvent('VOZ','ERRO TTS: '+S.ttsErr+' · mic '+(S.listening?(micPaused?'pausado':'ativo'):'off')+' · '+ms+'ms · fala='+(speechSynthesis.speaking?'sim':'nao')+' · voz='+(voice?voice.name:'padrão'),'#FF4E3E');
+    const detalhe = ' · mic '+(S.listening?(micPaused?'pausado':'ativo'):'off')+' · '+ms+'ms · fala='+(speechSynthesis.speaking?'sim':'nao')+' · voz='+(voice?voice.name:'padrão');
+    if(err==='synthesis-failed' && !retry){
+      logEvent('VOZ','ERRO TTS: '+err+detalhe+' — tentando de novo','#FFC53D');
+      // invalida callbacks desta tentativa e espera o catálogo de vozes carregar
+      const seq = ++speakSeq;
+      try{ speechSynthesis.cancel(); }catch(e){}
+      esperarVozes(()=>{
+        // respiro mínimo após o cancel: falar no mesmo tick volta a falhar
+        setTimeout(()=>{
+          if(seq !== speakSeq) return;   // outra fala assumiu
+          speakNow(text, true);
+        }, 250);
+      });
+      return;
+    }
+    logEvent('VOZ','ERRO TTS: '+err+detalhe,'#FF4E3E');
+    if(!getVoicesSafe().length && !S.ttsNoVoiceLogged){
+      S.ttsNoVoiceLogged = true;
+      logEvent('VOZ','nenhuma voz de síntese no navegador — instale espeak-ng/speech-dispatcher','#FF4E3E');
+    }
     finishSpeak();
   };
   try{ speechSynthesis.speak(u); }
