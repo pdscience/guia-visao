@@ -454,9 +454,9 @@ async function startLive(){
         // falha do modelo NÃO é falha de câmera: mensagem/estado próprios
         stopAll();
         setChip('SEM MODELO');
-        speak('Não foi possível carregar o modelo de visão. Verifique a internet e tente de novo, ou use o modo demonstração.', true);
-        toast('Falha ao carregar o modelo de visão — tente de novo ou use a demonstração');
-        $('#liveStatus').textContent='Não foi possível carregar o modelo de visão. Tente novamente com internet ou use a demonstração.';
+        speak('Não foi possível carregar o modelo de visão. Verifique a internet e tente de novo, ou diga demonstração.', true);
+        toast('Falha ao carregar o modelo de visão — tente de novo ou diga demonstração');
+        $('#liveStatus').textContent='Não foi possível carregar o modelo de visão. Tente novamente com internet ou diga demonstração.';
         $('#intro').classList.remove('away');
         logEvent('ERRO','falha ao carregar modelo COCO-SSD: '+((loadErr && loadErr.message) || loadErr),'#FF4E3E');
         return;
@@ -484,8 +484,8 @@ async function startLive(){
     if(!S.running) return;               // usuário parou enquanto a câmera abria
     stopAll();
     const negado = err && err.name === 'NotAllowedError';
-    toast(negado ? 'Permissão de câmera negada — use a demonstração' : 'Câmera indisponível — use o modo demonstração');
-    $('#liveStatus').textContent = negado ? 'Permita o acesso à câmera no navegador ou use a demonstração.' : 'Não foi possível acessar a câmera.';
+    toast(negado ? 'Permissão de câmera negada — diga demonstração' : 'Câmera indisponível — diga demonstração');
+    $('#liveStatus').textContent = negado ? 'Permita o acesso à câmera no navegador ou diga demonstração.' : 'Não foi possível acessar a câmera.';
     $('#intro').classList.remove('away');
     logEvent('ERRO', negado ? 'permissão de câmera negada' : 'acesso à câmera indisponível','#FF4E3E');
   }
@@ -917,10 +917,8 @@ app.addEventListener('pointerup', (e)=>{
   } else { S.lastTap = now; }
 });
 $('#btnStartCam').addEventListener('click', (e)=>{ e.stopPropagation(); unlockAudio(); start('live'); });
-$('#btnStartDemo').addEventListener('click', (e)=>{ e.stopPropagation(); unlockAudio(); start('sim'); });
-// tocar em qualquer lugar da intro ativa a câmera (menos nos botões demo/fechar)
+// tocar em qualquer lugar da intro ativa a câmera
 $('#intro').addEventListener('click', (e)=>{
-  if(e.target.closest('#btnStartDemo')) return;
   if(!$('#intro').classList.contains('away')){ unlockAudio(); start('live'); }
 });
 
@@ -1042,7 +1040,7 @@ document.addEventListener('visibilitychange', async ()=>{
 
 /* greeting + support notes */
 logEvent('SYS','Guia Visão inicializado');
-if(!navigator.mediaDevices?.getUserMedia) { toast('Este navegador não suporta câmera — use o modo demonstração'); logEvent('SYS','getUserMedia indisponível','#FF4E3E'); }
+if(!navigator.mediaDevices?.getUserMedia) { toast('Este navegador não suporta câmera — diga demonstração'); logEvent('SYS','getUserMedia indisponível','#FF4E3E'); }
 if(!window.cocoSsd) logEvent('SYS','modelo de IA não carregou (verifique a rede)','#FF4E3E');
 setTimeout(()=>{ if(!('speechSynthesis' in window)) logEvent('SYS','TTS indisponível','#FF4E3E'); },300);
 // boot falado: foca a intro e anuncia instruções para quem não enxerga
@@ -1052,7 +1050,7 @@ setTimeout(()=>{
   try{ intro.focus({preventScroll:true}); }catch(e){}
   $('#liveStatus').textContent = 'Guia Visão pronto. Toque em qualquer lugar para ativar a câmera, ou diga iniciar.';
   if('speechSynthesis' in window){
-    speak('Guia Visão pronto. Toque em qualquer lugar da tela para ativar a câmera. Para demonstração sem câmera, procure o botão demonstração na parte de baixo. Você também pode dizer: iniciar.', false);
+    speak('Guia Visão pronto. Toque em qualquer lugar da tela para ativar a câmera. Você também pode dizer: iniciar. Para simular sem câmera, diga demonstração.', false);
   }
 }, 900);
 

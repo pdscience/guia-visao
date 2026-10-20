@@ -4,14 +4,19 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+const app = fs.readFileSync(path.join(__dirname, '..', 'js', 'app.js'), 'utf8');
 
-test('botão de demonstração tem fechamento próprio e rótulo acessível', () => {
+test('botão de demonstração não existe mais', () => {
+  assert.ok(!html.includes('btnStartDemo'), 'o shell não deve ter o botão demo');
   assert.ok(!html.includes('</button>-->'), 'comentário não pode engolir o </button>');
+});
 
-  const m = html.match(/<button[^>]*id="btnStartDemo"[^>]*>([\s\S]*?)<\/button>/);
-  assert.ok(m, 'btnStartDemo precisa de uma tag </button> própria');
-  assert.match(m[0], /aria-label="[^"]+"/, 'btnStartDemo precisa de aria-label');
-  assert.match(m[1], /demonstra/i, 'btnStartDemo precisa de texto visível');
+test('app não referencia o botão demo removido', () => {
+  assert.ok(!app.includes('btnStartDemo'), 'listener em elemento inexistente quebra o boot');
+});
+
+test('instruções não mandam procurar um botão demo inexistente', () => {
+  assert.ok(!/botão demonstração/i.test(app), 'a fala de boas-vindas precisa ser atualizada');
 });
 
 test('texto de privacidade não promete que nada sai do aparelho', () => {
