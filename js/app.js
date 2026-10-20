@@ -8,14 +8,14 @@ const $ = s => document.querySelector(s);
 const S = {
   mode:'idle',            // idle | live | sim
   running:false,
-  model:null, modelReady:false, acc:true, modelBase:null,
+  model:null, modelReady:false, acc:false, modelBase:null,
   stream:null, track:null, torchOn:false,
   risk:0, closeness:0,
   dets:[], lastFree:true, freeSince:0,
   lastKey:'', lastSpoke:0, lastVib:0, lastPulse:0,
   tts:true, rate:1, vib:true, son:true, sens:1,
   listening:false, recog:null, autoVoice:true,
-  stableKey:'', stableCount:0, lastPan:0, sosTimer:null, lastTap:0,
+  stableKey:'', stableCount:0, lastPan:0, sosTimer:null, sosFired:false, lastTap:0,
   frames:0, detCount:0, voiceCount:0, vibCount:0, sessionT:0, timer:null,
   simItems:[], simLast:0,
   wake:null, inferBusy:false,
@@ -147,7 +147,15 @@ function speakNow(text){
     logEvent('VOZ','ERRO TTS: '+S.ttsErr+' · mic '+(S.listening?(micPaused?'pausado':'ativo'):'off')+' · '+ms+'ms · fala='+(speechSynthesis.speaking?'sim':'nao')+' · voz='+(voice?voice.name:'padrão'),'#FF4E3E');
     finishSpeak();
   };
-  speechSynthesis.speak(u);
+  try{ speechSynthesis.speak(u); }
+  catch(e){
+    // se o speak() lançar, não deixa ttsBusy preso até o watchdog de 8s
+    S.ttsErr = (e && (e.message || e.name)) || 'speak falhou';
+    logEvent('VOZ','ERRO TTS: '+S.ttsErr+' (exceção ao falar)','#FF4E3E');
+    ttsBusy = false; S.speakStart = 0;
+    finishSpeak();
+    return;
+  }
   S.voiceCount++; $('#statVoice').textContent = S.voiceCount;
   logEvent('VOZ', text, '#9DF53C');
 }
@@ -260,7 +268,8 @@ function phrase(d){
 }
 
 let lastDetTs = 0, lastSecSpoke = 0;
-function process(list, sw, sh){
+function processFrame(list, sw, sh){
+  S.lastDets = list;
   drawOverlay(list, sw, sh);
   S.detCount += list.length;
   const top = list[0] || null;
@@ -435,13 +444,22 @@ async function startLive(){
         toast('Visão computacional pronta');
       }catch(loadErr){
         console.warn(loadErr);
+        if(!S.running) return;             // usuário parou durante o download
         if(!navigator.onLine){
           setChip('SEM MODELO');
           speak('Modelo ainda não baixado. Conecte uma vez à internet. Iniciando demonstração.', true);
           logEvent('IA','modelo sem cache, fallback simulação','#FF4E3E');
-          if(S.running){ startSim(); return; }
+          startSim(); return;
         }
-        throw loadErr;
+        // falha do modelo NÃO é falha de câmera: mensagem/estado próprios
+        stopAll();
+        setChip('SEM MODELO');
+        speak('Não foi possível carregar o modelo de visão. Verifique a internet e tente de novo, ou use o modo demonstração.', true);
+        toast('Falha ao carregar o modelo de visão — tente de novo ou use a demonstração');
+        $('#liveStatus').textContent='Não foi possível carregar o modelo de visão. Tente novamente com internet ou use a demonstração.';
+        $('#intro').classList.remove('away');
+        logEvent('ERRO','falha ao carregar modelo COCO-SSD: '+((loadErr && loadErr.message) || loadErr),'#FF4E3E');
+        return;
       }
     }
     if(!S.running) return;
@@ -463,19 +481,21 @@ async function startLive(){
     })();
   }catch(err){
     console.warn(err);
+    if(!S.running) return;               // usuário parou enquanto a câmera abria
     stopAll();
-    toast('Câmera indisponível — use o modo demonstração');
-    $('#liveStatus').textContent='Não foi possível acessar a câmera.';
+    const negado = err && err.name === 'NotAllowedError';
+    toast(negado ? 'Permissão de câmera negada — use a demonstração' : 'Câmera indisponível — use o modo demonstração');
+    $('#liveStatus').textContent = negado ? 'Permita o acesso à câmera no navegador ou use a demonstração.' : 'Não foi possível acessar a câmera.';
     $('#intro').classList.remove('away');
-    logEvent('ERRO','acesso à câmera negado ou indisponível','#FF4E3E');
+    logEvent('ERRO', negado ? 'permissão de câmera negada' : 'acesso à câmera indisponível','#FF4E3E');
   }
 }
 let lastInfer=0, framesWin=0, fpsT=performance.now();
 // ---------- kNN pessoal: inferência em 2º plano ----------
 // O MobileNet leva ~200-400ms. Rodando dentro de S.inferBusy ele atrasava o
-// alerta de COCO do MESMO frame (o process() só era chamado depois dele).
+// alerta de COCO do MESMO frame (o processFrame() só era chamado depois dele).
 // Aqui a inferência é AGENDADA antes do bloco de inferência do COCO, mas só
-// EXECUTA num setTimeout(0) — ou seja, depois que o process() do frame já falou.
+// EXECUTA num setTimeout(0) — ou seja, depois que o processFrame() do frame já falou.
 let knnBusy=false, knnLast=0;
 const KNN_GAP=340;        // ~1 inferência a cada 340ms (mesma cadência do "1 em 2 frames")
 const PERSONAL_TTL=2000; // o hit pessoal continua válido 2s -> segura a histerese
@@ -533,7 +553,7 @@ async function loopLive(){
       if(S.knnOn && S.knnReady){
         try{ rel = fusePersonal(rel, sw, sh, currentPersonal(performance.now())); }catch(e){}
       }
-      process(rel, sw, sh);
+      processFrame(rel, sw, sh);
     }catch(e){
       // registra UMA vez o erro de inferencia (antes era engolido e o app
       // parecia "sem reconhecimento" sem nenhuma pista)
@@ -645,7 +665,7 @@ function simTick(ts){
   if(S.simItems.length<3 && Math.random()<0.01) spawnSim();
   S.lastRaw = { n:preds.length, top:preds[0] ? preds[0].class : 'nada' };
   const rel = preds.map(p=>enrich(p,VW,VH)).sort((a,b)=>b.score-a.score);
-  process(rel, VW, VH);
+  processFrame(rel, VW, VH);
   requestAnimationFrame(simTick);
 }
 
@@ -679,7 +699,13 @@ async function start(mode){
     const m=String(Math.floor(S.sessionT/60)).padStart(2,'0'), s=String(S.sessionT%60).padStart(2,'0');
     const el=$('#statTime'); if(el) el.textContent=`${m}:${s}`;
   },1000);
-  try{ S.wake = await navigator.wakeLock?.request('screen'); }catch(e){}
+  // wakeLock pode demorar/pendurar em alguns navegadores: nunca bloqueia o start
+  try{
+    const wl = navigator.wakeLock?.request('screen');
+    if(wl && typeof wl.then === 'function'){
+      wl.then(w=>{ if(S.running) S.wake = w; else { try{ w.release(); }catch(e){} } }).catch(()=>{});
+    }
+  }catch(e){}
   // mic primeiro, fala depois: speak() pausa a escuta durante a fala (bug Android TTS×mic)
   if(S.autoVoice && !S.listening){ setListening(true, true); }
   speak(mode==='live' ? 'Guia Visão ativado. Boa caminhada.' : 'Modo demonstração ativado.', true);
@@ -738,10 +764,6 @@ async function describe(){
   if(r.ok){ speak(r.text, true); logEvent('DESC','nuvem: '+r.text); }
   else { speak(local+' Nuvem: '+r.err+'.', true); logEvent('DESC','nuvem falhou ('+r.err+'), usando local','#FFC53D'); }
 }
-// guardar últimas detecções live
-const _process = process;
-process = function(list, sw, sh){ S.lastDets = list; _process(list, sw, sh); };
-
 /* ---------- lanterna ---------- */
 async function setTorch(on, silent=false){
   S.torchOn = on;
@@ -793,13 +815,14 @@ function setListening(on, quiet=false){
   }
 }
 function handleCommand(t){
-  const has = (...ws)=>ws.some(w=>t.includes(w));
+  // palavra/frase inteira: "sossegado" não dispara SOS e "acena" não é "cena"
+  const has = (...ws)=>falaTem(t, ...ws);
   if(has('socorro','sos','emergência','emergencia','ajuda urgente')){ triggerSOS(); }
   else if(has('vigiar','lista de vigilância','lista de vigilancia','o que estou vigiando')){ handleVigia(t); }
-  else if(has('parar','pausar','desligar','stop')){ if(S.running){ stopAll(); speak('Detecção pausada.'); } else speak('A detecção já está pausada.'); }
-  else if(has('iniciar','começar','ligar','inicia')){ if(!S.running) start('live'); else speak('A detecção já está ativa.'); }
-  else if(has('demonstra','demo','simula')){ if(!S.running) start('sim'); else speak('Já estou em funcionamento.'); }
-  else if(has('frente','descrev','o que tem','o que há','cena')){ describe(); }
+  else if(has('parar','pare','pausar','desligar','stop')){ if(S.running){ stopAll(); speak('Detecção pausada.'); } else speak('A detecção já está pausada.'); }
+  else if(has('iniciar','inicia','iniciando','começar','comeca','comece','ligar')){ if(!S.running) start('live'); else speak('A detecção já está ativa.'); }
+  else if(has('demonstração','demonstracao','demonstra','demo','simulação','simulacao','simula','simular')){ if(!S.running) start('sim'); else speak('Já estou em funcionamento.'); }
+  else if(has('frente','descreva','descreve','descrever','descrição','descricao','o que tem','o que há','o que ha','cena')){ describe(); }
   else if(has('repetir','repete')){ speak($('#liveAlert').textContent || 'Nenhum alerta recente.', true); }
   else if(has('lanterna','luz','flash')){ setTorch(!S.torchOn); }
   else if(has('rápido','rapido')){ setRate(Math.min(1.5,S.rate+0.15)); speak('Fala mais rápida.'); }
@@ -811,14 +834,14 @@ function handleCommand(t){
 
 /* ---------- lista de vigilância (prioridade nos alertas) ---------- */
 function handleVigia(t){
-  const n = t.normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  const n = vigiaNorm(t);
   if(n.includes('lista de vigilancia') || n.includes('o que estou vigiando')){
     const l = Vigia.all().map(c=>LABELS[c]||c);
     speak(l.length ? 'Na lista de vigilância: '+l.join(', ')+'.' : 'A lista de vigilância está vazia.', true);
     logEvent('VIGIA','lista: '+(l.length ? l.join(', ') : 'vazia'));
     return;
   }
-  const rm = n.match(/^(?:parar de vigiar|deixar de vigiar|nao vigiar(?: mais)?)\s+(.+)$/);
+  const rm = n.match(/(?:^| )(?:parar de vigiar|deixar de vigiar|nao vigiar(?: mais)?)\s+(.+)$/);
   if(rm){
     const nome = rm[1].trim();
     const cls = Vigia.findByName(nome);
@@ -827,7 +850,7 @@ function handleVigia(t){
     else speak(LABELS[cls]+' não estava na lista.');
     return;
   }
-  const add = n.match(/^vigiar\s+(.+)$/);
+  const add = n.match(/(?:^| )vigiar\s+(.+)$/);
   if(add){
     const nome = add[1].trim();
     const cls = Vigia.findByName(nome);
@@ -866,11 +889,17 @@ function repeatAlert(){
   unlockAudio();
   speak($('#liveAlert').textContent || ($('#alertTitle').textContent + '. ' + $('#alertSub').textContent), true);
 }
-$('#btnMain').addEventListener('click', ()=>{ unlockAudio(); if(S.running){ stopAll(); speak('Detecção pausada.'); } else { start(S.prefMode||'live'); } });
+$('#btnMain').addEventListener('click', ()=>{
+  unlockAudio();
+  // o clique que vem depois de segurar 2s pertence ao SOS, não alterna a detecção
+  if(S.sosFired){ S.sosFired = false; return; }
+  if(S.running){ stopAll(); speak('Detecção pausada.'); } else { start(S.prefMode||'live'); }
+});
 // segurar 2s no botão principal = SOS (sem interferir no clique simples)
 $('#btnMain').addEventListener('pointerdown', ()=>{
+  S.sosFired = false;
   clearTimeout(S.sosTimer);
-  S.sosTimer = setTimeout(()=>{ triggerSOS(); S.sosTimer=null; }, 2000);
+  S.sosTimer = setTimeout(()=>{ S.sosFired = true; triggerSOS(); S.sosTimer=null; }, 2000);
 });
 ['pointerup','pointerleave','pointercancel'].forEach(ev=>$('#btnMain').addEventListener(ev, ()=>clearTimeout(S.sosTimer)));
 $('#btnVoice').addEventListener('click', ()=>{ unlockAudio(); setListening(!S.listening); });
@@ -897,24 +926,75 @@ $('#intro').addEventListener('click', (e)=>{
 
 function unlockAudio(){
   try{ actx = actx || new (window.AudioContext||window.webkitAudioContext)(); if(actx.state==='suspended') actx.resume(); }catch(e){}
-  if('speechSynthesis' in window){ const u=new SpeechSynthesisUtterance(' '); u.volume=0; speechSynthesis.speak(u); }
+  // utterance silenciosa só para destravar o TTS no gesto do usuário; não
+  // atropela uma fala em curso (o estado ttsBusy é a fonte de verdade)
+  if('speechSynthesis' in window && !ttsBusy){
+    try{ const u=new SpeechSynthesisUtterance(' '); u.volume=0; speechSynthesis.speak(u); }catch(e){}
+  }
 }
 
 /* settings */
-function setRate(v){ S.rate = Math.round(v*100)/100; $('#rateVal').textContent = S.rate.toFixed(1)+'×'; $('#rgRate').value=S.rate; paintRange($('#rgRate')); }
+const PREFS_KEY = 'guia-visao-prefs';
+function readPrefs(){
+  try{ const p = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}'); return (p && typeof p === 'object') ? p : {}; }
+  catch(e){ return {}; }
+}
+function savePrefs(){
+  try{
+    localStorage.setItem(PREFS_KEY, JSON.stringify({
+      tts:S.tts, autoVoice:S.autoVoice, vib:S.vib, son:S.son, knnOn:S.knnOn,
+      acc:S.acc, sens:S.sens, rate:S.rate,
+      hc:document.body.classList.contains('hc'),
+      big:document.body.classList.contains('bigtype'),
+    }));
+  }catch(e){}
+}
+function setRate(v){
+  S.rate = Math.round(v*100)/100;
+  $('#rateVal').textContent = S.rate.toFixed(1)+'×';
+  $('#rgRate').value = S.rate;
+  paintRange($('#rgRate'));
+  savePrefs();
+}
 function paintRange(el){ const p=(el.value-el.min)/(el.max-el.min)*100; el.style.setProperty('--fill',p+'%'); }
+function applyPrefs(){
+  const p = readPrefs();
+  for(const k of ['tts','autoVoice','vib','son','knnOn','acc']){
+    if(typeof p[k] === 'boolean') S[k] = p[k];
+  }
+  if(typeof p.sens === 'number' && p.sens >= 0.6 && p.sens <= 1.7) S.sens = p.sens;
+  if(typeof p.rate === 'number' && p.rate >= 0.6 && p.rate <= 1.5) S.rate = Math.round(p.rate*100)/100;
+  const hc = p.hc === true, big = p.big === true;
+  document.body.classList.toggle('hc', hc);
+  document.body.classList.toggle('bigtype', big);
+  $('#swVoice').checked = S.tts;
+  $('#swAutoVoice').checked = S.autoVoice;
+  $('#swVib').checked = S.vib;
+  $('#swSon').checked = S.son;
+  $('#swKNn').checked = S.knnOn;
+  $('#swAcc').checked = S.acc;
+  $('#swHC').checked = hc;
+  $('#swBig').checked = big;
+  $('#rgSens').value = S.sens;
+  paintRange($('#rgSens'));
+  $('#sensVal').textContent = S.sens<0.9?'BAIXA':S.sens>1.3?'ALTA':'NORMAL';
+  setRate(S.rate);
+}
+applyPrefs();
 $('#rgRate').addEventListener('input', e=>{ setRate(+e.target.value); });
 $('#rgSens').addEventListener('input', e=>{
   S.sens=+e.target.value; paintRange(e.target);
   $('#sensVal').textContent = S.sens<0.9?'BAIXA':S.sens>1.3?'ALTA':'NORMAL';
+  savePrefs();
 });
-$('#swVoice').addEventListener('change', e=>{ S.tts=e.target.checked; if(S.tts) speak('Voz ativada.'); logEvent('CFG', 'voz '+(S.tts?'on':'off')); });
-$('#swAutoVoice').addEventListener('change', e=>{ S.autoVoice=e.target.checked; logEvent('CFG','escuta automática '+(S.autoVoice?'on':'off')); if(S.autoVoice && !S.listening && S.running) setListening(true,true); if(!S.autoVoice && S.listening) setListening(false,true); });
-$('#swVib').addEventListener('change', e=>{ S.vib=e.target.checked; if(S.vib) vibrate(60); logEvent('CFG','vibração '+(S.vib?'on':'off')); });
-$('#swSon').addEventListener('change', e=>{ S.son=e.target.checked; if(S.son) beep(880); logEvent('CFG','sonificação '+(S.son?'on':'off')); });
-$('#swKNn').addEventListener('change', e=>{ S.knnOn=e.target.checked; if(!S.knnOn) S.personalHit=null; logEvent('CFG','meus obstáculos '+(S.knnOn?'on':'off')); });
+$('#swVoice').addEventListener('change', e=>{ S.tts=e.target.checked; if(S.tts) speak('Voz ativada.'); logEvent('CFG', 'voz '+(S.tts?'on':'off')); savePrefs(); });
+$('#swAutoVoice').addEventListener('change', e=>{ S.autoVoice=e.target.checked; logEvent('CFG','escuta automática '+(S.autoVoice?'on':'off')); if(S.autoVoice && !S.listening && S.running) setListening(true,true); if(!S.autoVoice && S.listening) setListening(false,true); savePrefs(); });
+$('#swVib').addEventListener('change', e=>{ S.vib=e.target.checked; if(S.vib) vibrate(60); logEvent('CFG','vibração '+(S.vib?'on':'off')); savePrefs(); });
+$('#swSon').addEventListener('change', e=>{ S.son=e.target.checked; if(S.son) beep(880); logEvent('CFG','sonificação '+(S.son?'on':'off')); savePrefs(); });
+$('#swKNn').addEventListener('change', e=>{ S.knnOn=e.target.checked; if(!S.knnOn) S.personalHit=null; logEvent('CFG','meus obstáculos '+(S.knnOn?'on':'off')); savePrefs(); });
 $('#swAcc').addEventListener('change', async e=>{
   S.acc = e.target.checked;
+  savePrefs();
   logEvent('CFG','precisão alta '+(S.acc?'on':'off'));
   if(!window.cocoSsd){ toast('Modelo de IA indisponível'); return; }
   const b = S.acc?'mobilenet_v2':'lite_mobilenet_v2';
@@ -929,6 +1009,7 @@ $('#swAcc').addEventListener('change', async e=>{
   }catch(err){
     // falhou: volta ao modelo anterior (S.model não foi sobrescrito)
     S.acc = (antes==='mobilenet_v2'); $('#swAcc').checked = S.acc;
+    savePrefs();
     S.modelReady = !!S.model;
     toast('Falha ao trocar modelo — mantendo o anterior');
     logEvent('ERRO','troca de modelo falhou ('+((err&&err.message)||err)+')','#FF4E3E');
@@ -944,9 +1025,8 @@ $('#cloudKey').addEventListener('change', e=>{
   CloudVision.setKey(e.target.value.trim());
   toast(CloudVision.getKey() ? 'Chave salva neste aparelho' : 'Chave removida');
 });
-$('#swHC').addEventListener('change', e=>{ document.body.classList.toggle('hc', e.target.checked); speak(e.target.checked?'Alto contraste ativado.':'Alto contraste desativado.'); });
-$('#swBig').addEventListener('change', e=>{ document.body.classList.toggle('bigtype', e.target.checked); speak(e.target.checked?'Texto ampliado.':'Texto normal.'); });
-paintRange($('#rgRate')); paintRange($('#rgSens'));
+$('#swHC').addEventListener('change', e=>{ document.body.classList.toggle('hc', e.target.checked); speak(e.target.checked?'Alto contraste ativado.':'Alto contraste desativado.'); savePrefs(); });
+$('#swBig').addEventListener('change', e=>{ document.body.classList.toggle('bigtype', e.target.checked); speak(e.target.checked?'Texto ampliado.':'Texto normal.'); savePrefs(); });
 $('#swCloud').checked = CloudVision.isEnabled(); $('#cloudKey').value = CloudVision.getKey();
 
 /* stats */

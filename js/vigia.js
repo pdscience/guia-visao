@@ -56,3 +56,16 @@ function vigiaNorm(s){
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 }
+
+// comando de voz por palavra/frase inteira: evita falso positivo de substring
+// ("sossegado" não é "sos", "acena" não é "cena")
+function falaTem(texto, ...termos){
+  const n = vigiaNorm(texto);
+  if(!n) return false;
+  return termos.some(t=>{
+    const k = vigiaNorm(t);
+    if(!k) return false;
+    const esc = k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp('(?:^| )'+esc+'(?: |$)').test(n);
+  });
+}

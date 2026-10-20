@@ -64,6 +64,9 @@ const MeuKNn = {
         }
       }catch(err){ console.warn('classe corrompida, ignorada:', rec.id); }
     }
+    // limpa antes de repor: sem isso, obstáculos apagados continuam na memória
+    // do classificador e voltam a ser previstos como "Meu obstáculo" (fantasma)
+    this.clf.clearAllClasses();
     if(Object.keys(merged).length) this.clf.setClassifierDataset(merged);
     return this.count();
   },
@@ -111,12 +114,18 @@ const PRESETS = [
   'Portão','Muro','Escada','Porta',
 ];
 async function startTraining(nome, camEl, onTick){
+  // aborta se a detecção parar no meio: sem isso, o treino seguiria com frames congelados
+  const ativo = ()=> S.running && S.mode==='live' && camEl && camEl.videoWidth;
+  const interrompido = ()=>{ if(!ativo()) throw new Error('Treino interrompido: detecção parada.'); };
+  interrompido();
   // o carregamento do MobileNet é assíncrono em segundo plano: garante os pesos antes de fotografar
   try{ await MeuKNn.ensureModel(); }catch(e){ throw new Error('Sem o modelo MobileNet (rode o app com internet uma vez).'); }
+  interrompido();
   const id = 'm' + Date.now().toString(36);
   const labelsAntes = new Set(Object.keys(MeuKNn.clf.getClassifierDataset()).filter(l => l !== 'fundo'));
   speak('Primeiro aponte para outro lugar, sem o obstáculo. Vou fotografar o fundo.', true);
   for(let i = 1; i <= 5; i++){
+    interrompido();
     MeuKNn.addExampleFromVideo(camEl, 'fundo');
     onTick?.(i, 15);
     try{ beep(660, 0.07, 0.12, 0); }catch(e){}
@@ -124,11 +133,13 @@ async function startTraining(nome, camEl, onTick){
   }
   speak(`Fotografando ${nome}. Mexa um pouco o celular.`, true);
   for(let i = 1; i <= 10; i++){
+    interrompido();
     MeuKNn.addExampleFromVideo(camEl, id);
     onTick?.(5 + i, 15);
     try{ beep(880, 0.07, 0.12, 0); }catch(e){}
     await new Promise(r => setTimeout(r, 1000));
   }
+  interrompido();
   const dataset = await MeuKNn.snapshotDataset();
   const mine = {};
   for(const [label, e] of Object.entries(dataset)){ if(label !== 'fundo' && !labelsAntes.has(label)) mine[label] = e; }
@@ -193,7 +204,16 @@ async function renderMyObst(){
     if(all.length >= 12){ speak('Limite de 12 obstáculos. Apague um para cadastrar outro.', true); return; }
     $('#btnTrainStart').disabled = true;
     try{ await startTraining(nome, cam, (i, n)=>{ $('#trainStatus').textContent = `FOTO ${i}/${n}`; }); }
-    catch(e){ speak('Falha ao fotografar. Tente de novo.', true); }
+    catch(e){
+      const cancelado = /(interromp|cancel)/i.test((e && e.message) || '');
+      if(cancelado){
+        $('#trainStatus').textContent = 'TREINO CANCELADO';
+        // descarta as fotos parciais: senão o id abortado continua prevendo
+        // "Meu obstáculo" fantasma até o próximo reload
+        try{ await MeuKNn.loadDataset(); if(S.knnCount) S.knnCount = MeuKNn.count(); }catch(err){}
+      }
+      speak(cancelado ? 'Treinamento cancelado.' : 'Falha ao fotografar. Tente de novo.', true);
+    }
     $('#btnTrainStart').disabled = false;
     renderMyObst();
   };
