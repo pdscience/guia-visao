@@ -24,6 +24,7 @@
 <script src="./js/obst.js"></script>
 <script src="./js/cloud.js"></script>
 <script src="./js/vigia.js"></script>
+<script src="./js/safety.js"></script>
 <script src="./vendor/lucide.min.js"></script>
 
 <link rel="stylesheet" href="./css/app.css">
@@ -94,6 +95,7 @@
         </div>
         <div class="flex items-center gap-2">
           <button id="btnTorch" class="icon-btn" aria-label="Ativar lanterna" aria-pressed="false"><i data-lucide="zap" class="w-5 h-5"></i></button>
+          <button id="btnSOS" class="icon-btn" aria-label="Acionar alarme de emergência. Não faz chamadas."><i data-lucide="triangle-alert" class="w-5 h-5"></i></button>
           <button id="btnHelp" class="icon-btn" aria-label="Abrir ajuda e comandos de voz"><i data-lucide="info" class="w-5 h-5"></i></button>
         </div>
       </header>
@@ -122,17 +124,17 @@
 
       <!-- ================= BOTTOM: alert + controls ================= -->
       <div class="absolute bottom-0 inset-x-0 z-30 px-5 pb-[max(1.4rem,env(safe-area-inset-bottom))]">
-        <button id="alertCard" class="mb-5 opacity-70" aria-label="Repetir último alerta: Caminho livre. NENHUM OBSTÁCULO À FRENTE">
+        <button id="alertCard" class="mb-5 opacity-70" aria-label="Detecção pausada. Sem análise.">
           <span class="riskdot w-12 h-12 rounded-2xl grid place-items-center flex-none text-[#0b0e05]">
             <span id="alertIconOk"><i data-lucide="circle-check" class="w-6 h-6"></i></span>
             <span id="alertIconWarn" class="hidden"><i data-lucide="circle-alert" class="w-6 h-6"></i></span>
             <span id="alertIconDanger" class="hidden"><i data-lucide="triangle-alert" class="w-6 h-6"></i></span>
           </span>
           <span class="flex-1 min-w-0">
-            <span id="alertTitle" class="block font-extrabold text-lg leading-tight tracking-tight text-white">Caminho livre</span>
-            <span id="alertSub" class="block font-mono text-[10px] tracking-[.18em] text-white/50 mt-1">NENHUM OBSTÁCULO À FRENTE</span>
+            <span id="alertTitle" class="block font-extrabold text-lg leading-tight tracking-tight text-white">Detecção pausada</span>
+            <span id="alertSub" class="block font-mono text-[10px] tracking-[.18em] text-white/50 mt-1">SEM ANÁLISE</span>
           </span>
-          <span id="riskTag" class="font-mono text-[10px] tracking-[.15em] rounded-full px-3 py-1.5 flex-none">LIVRE</span>
+          <span id="riskTag" class="font-mono text-[10px] tracking-[.15em] rounded-full px-3 py-1.5 flex-none">PARADO</span>
         </button>
 
         <div class="flex items-end justify-center gap-7" role="group" aria-label="Controles principais">
@@ -235,8 +237,8 @@
             <button class="icon-btn" data-close aria-label="Fechar ajuda"><i data-lucide="x" class="w-5 h-5"></i></button>
           </div>
           <ul class="space-y-2.5 text-[14px]">
-            <li class="flex items-center justify-between rounded-2xl border border-white/8 bg-white/4 px-4 py-3"><span>Iniciar a detecção</span><span class="font-mono text-[10px] tracking-[.12em] text-[#9DF53C]">“INICIAR”</span></li>
-            <li class="flex items-center justify-between rounded-2xl border border-white/8 bg-white/4 px-4 py-3"><span>Pausar a detecção</span><span class="font-mono text-[10px] tracking-[.12em] text-[#9DF53C]">“PARAR”</span></li>
+            <li class="flex items-center justify-between rounded-2xl border border-white/8 bg-white/4 px-4 py-3"><span>Iniciar a detecção</span><span class="font-mono text-[10px] tracking-[.12em] text-[#9DF53C]">“GUIA VISÃO, INICIAR”</span></li>
+            <li class="flex items-center justify-between rounded-2xl border border-white/8 bg-white/4 px-4 py-3"><span>Pausar a detecção</span><span class="font-mono text-[10px] tracking-[.12em] text-[#9DF53C]">“GUIA VISÃO, PARAR”</span></li>
             <li class="flex items-center justify-between rounded-2xl border border-white/8 bg-white/4 px-4 py-3"><span>Descrever o ambiente</span><span class="font-mono text-[10px] tracking-[.12em] text-[#9DF53C]">“O QUE TEM À FRENTE?”</span></li>
             <li class="flex items-center justify-between rounded-2xl border border-white/8 bg-white/4 px-4 py-3"><span>Repetir último alerta</span><span class="font-mono text-[10px] tracking-[.12em] text-[#9DF53C]">“REPETIR”</span></li>
             <li class="flex items-center justify-between rounded-2xl border border-white/8 bg-white/4 px-4 py-3"><span>Vigiar um objeto (prioridade)</span><span class="font-mono text-[10px] tracking-[.12em] text-[#9DF53C]">“VIGIAR CACHORRO”</span></li>
@@ -245,9 +247,9 @@
             <li class="flex items-center justify-between rounded-2xl border border-white/8 bg-white/4 px-4 py-3"><span>Ligar / desligar lanterna</span><span class="font-mono text-[10px] tracking-[.12em] text-[#9DF53C]">“LANTERNA”</span></li>
             <li class="flex items-center justify-between rounded-2xl border border-white/8 bg-white/4 px-4 py-3"><span>Ajustar fala</span><span class="font-mono text-[10px] tracking-[.12em] text-[#9DF53C]">“MAIS RÁPIDO / DEVAGAR”</span></li>
             <li class="flex items-center justify-between rounded-2xl border border-white/8 bg-white/4 px-4 py-3"><span>Diagnóstico do sistema</span><span class="font-mono text-[10px] tracking-[.12em] text-[#9DF53C]">“DIAGNÓSTICO”</span></li>
-            <li class="flex items-center justify-between rounded-2xl border border-white/8 bg-white/4 px-4 py-3"><span>Pedir ajuda (SOS)</span><span class="font-mono text-[10px] tracking-[.12em] text-[#9DF53C]">“SOCORRO” / SEGURAR PARAR 2s</span></li>
+            <li class="flex items-center justify-between rounded-2xl border border-white/8 bg-white/4 px-4 py-3"><span>Alarme de emergência (SOS)</span><span class="font-mono text-[10px] tracking-[.12em] text-[#9DF53C]">BOTÃO SOS / SEGURAR PARAR 2s / “GUIA VISÃO, SOCORRO”</span></li>
           </ul>
-          <p class="mt-5 text-[13px] leading-relaxed text-white/45">Para baixa iluminação, ative a lanterna no topo. O vídeo é analisado no seu aparelho. A imagem só sai do dispositivo se você ativar a IA na nuvem e pedir uma descrição — nesse caso, somente a foto desse pedido é enviada ao Google Gemini. “Vigiar” funciona só com objetos que a câmera já reconhece (pessoa, cachorro, bicicleta, carro, cavalo, cadeira…).</p>
+          <p class="mt-5 text-[13px] leading-relaxed text-white/45">Comandos críticos, como iniciar, parar e socorro, pedem confirmação quando ditos sem a palavra de ativação. Diga “confirmar” depois, ou repita com “Guia Visão,” antes. O SOS é um alarme local: não faz chamadas nem envia mensagens. Ele toca, vibra e fala para chamar atenção de pessoas próximas. Para baixa iluminação, ative a lanterna no topo. O vídeo é analisado no seu aparelho. A imagem só sai do dispositivo se você ativar a IA na nuvem e pedir uma descrição — nesse caso, somente a foto desse pedido é enviada ao Google Gemini. “Vigiar” funciona só com objetos que a câmera já reconhece (pessoa, cachorro, bicicleta, carro, cavalo, cadeira…).</p>
         </div>
       </section>
 

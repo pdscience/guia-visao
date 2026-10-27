@@ -23,3 +23,16 @@ test('texto de privacidade não promete que nada sai do aparelho', () => {
   assert.ok(!/nenhuma imagem sai do dispositivo/i.test(html), 'ajuda deve mencionar o envio opcional para a nuvem');
   assert.match(html, /IA na nuvem/i);
 });
+
+test('botão SOS é acessível e deixa claro que não faz chamadas', () => {
+  assert.match(html, /id="btnSOS"/, 'o SOS precisa de um botão visível');
+  assert.match(html, /Não faz chamadas/i, 'o label do botão deve ser honesto');
+  assert.match(html, /alarme local: não faz chamadas/i, 'a ajuda deve explicar o SOS local');
+});
+
+test('regras de segurança carregam antes do app', () => {
+  const safety = html.indexOf('./js/safety.js');
+  const appSrc = html.indexOf('./js/app.js');
+  assert.ok(safety > -1, 'index deve carregar js/safety.js');
+  assert.ok(appSrc > safety, 'safety.js precisa vir antes de app.js');
+});

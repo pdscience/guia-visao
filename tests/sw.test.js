@@ -64,3 +64,7 @@ test('cacheia resposta ok', async () => {
   assert.strictEqual(res.ok, true);
   assert.deepStrictEqual(puts, ['https://app.test/recurso']);
 });
+
+test('shell offline inclui as regras de segurança', () => {
+  assert.match(SW, /['"]\.\/js\/safety\.js['"]/, 'safety.js precisa estar no cache do shell');
+});

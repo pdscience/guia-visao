@@ -1317,6 +1317,13 @@ button {
   color: #0a0d05;
   border-color: transparent;
 }
+#btnSOS {
+  color: #FF4E3E;
+  border-color: rgba(255,78,62,.45);
+}
+#btnSOS:active {
+  background: rgba(255,78,62,.16);
+}
 #alertCard {
   display: flex;
   align-items: center;

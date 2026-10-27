@@ -16,6 +16,9 @@ const S = {
   tts:true, rate:1, vib:true, son:true, sens:1,
   listening:false, recog:null, autoVoice:true,
   stableKey:'', stableCount:0, lastPan:0, sosTimer:null, sosFired:false, lastTap:0,
+  pendingCmd:null, pendingAt:0, startedOnce:false,
+  readyAnnounced:false, lastFrameTs:0, lastVideoTime:0, lastVideoTimeAt:0,
+  resumeOnVisible:false, resumeMode:'live',
   frames:0, detCount:0, voiceCount:0, vibCount:0, sessionT:0, timer:null,
   simItems:[], simLast:0,
   wake:null, inferBusy:false,
@@ -314,6 +317,8 @@ function phrase(d){
 let lastDetTs = 0, lastSecSpoke = 0;
 function processFrame(list, sw, sh){
   S.lastDets = list;
+  S.lastFrameTs = performance.now();
+  announceReady();
   drawOverlay(list, sw, sh);
   S.detCount += list.length;
   const top = list[0] || null;
@@ -374,16 +379,17 @@ function processFrame(list, sw, sh){
     const rawEmpty = (S.lastRaw||{n:0}).n===0;
     if(!S.lastFree && rawEmpty && now - lastDetTs > 7000){
       S.lastFree = true; S.lastKey=''; S.stableKey=''; S.stableCount=0;
-      $('#alertTitle').textContent = 'Caminho livre';
-      $('#alertSub').textContent = 'NENHUM OBSTÁCULO À FRENTE';
-      $('#alertCard').setAttribute('aria-label','Repetir último alerta: '+$('#alertTitle').textContent+'. '+$('#alertSub').textContent);
+      $('#alertTitle').textContent = 'Sem obstáculos reconhecidos';
+      $('#alertSub').textContent = 'NENHUM OBSTÁCULO RECONHECIDO';
+      $('#riskTag').textContent = 'SEM DETECÇÕES';
+      $('#alertCard').setAttribute('aria-label','Sem obstáculos reconhecidos. Isso não garante caminho livre.');
       $('#alertCard').style.outline = '';
       $('#alertCard').classList.add('opacity-70');
       $('#alertIconOk').classList.remove('hidden');
       $('#alertIconWarn').classList.add('hidden');
       $('#alertIconDanger').classList.add('hidden');
-      speak('Caminho livre.');
-      logEvent('LIVRE','nenhum obstáculo detectado');
+      speak(Safety.freeSpeech());
+      logEvent('LIVRE','nenhum obstáculo reconhecido');
     }
   }
 }
@@ -466,8 +472,19 @@ async function startLive(){
     if(!S.running){ S.stream.getTracks().forEach(t=>t.stop()); S.stream=null; return; }
 
     S.track = S.stream.getVideoTracks()[0];
+    if(S.track){
+      const perdeu = ()=>onCameraLost('track encerrado');
+      if(typeof S.track.addEventListener === 'function'){
+        S.track.addEventListener('ended', perdeu);
+      } else {
+        S.track.onended = perdeu;
+      }
+    }
     cam.srcObject = S.stream;
     await cam.play().catch(()=>{});
+    S.lastVideoTime = cam.currentTime || 0;
+    S.lastVideoTimeAt = performance.now();
+    S.noFrameSince = 0; S.noFrameWarned = false;
     // canvas reduzido p/ inferência: modelo interno é 300x300, 640px corta
     // a latência no celular sem mudar o mapeamento do overlay
     try{
@@ -501,7 +518,7 @@ async function startLive(){
         speak('Não foi possível carregar o modelo de visão. Verifique a internet e tente de novo, ou diga demonstração.', true);
         toast('Falha ao carregar o modelo de visão — tente de novo ou diga demonstração');
         $('#liveStatus').textContent='Não foi possível carregar o modelo de visão. Tente novamente com internet ou diga demonstração.';
-        $('#intro').classList.remove('away');
+        showIntro();
         logEvent('ERRO','falha ao carregar modelo COCO-SSD: '+((loadErr && loadErr.message) || loadErr),'#FF4E3E');
         return;
       }
@@ -527,10 +544,13 @@ async function startLive(){
     console.warn(err);
     if(!S.running) return;               // usuário parou enquanto a câmera abria
     stopAll();
+    const msg = Safety.cameraError(err);
     const negado = err && err.name === 'NotAllowedError';
     toast(negado ? 'Permissão de câmera negada — diga demonstração' : 'Câmera indisponível — diga demonstração');
-    $('#liveStatus').textContent = negado ? 'Permita o acesso à câmera no navegador ou diga demonstração.' : 'Não foi possível acessar a câmera.';
-    $('#intro').classList.remove('away');
+    $('#liveStatus').textContent = msg;
+    showIntro();
+    speak(msg, true);
+    vibrate([300,150,300]);
     logEvent('ERRO', negado ? 'permissão de câmera negada' : 'acesso à câmera indisponível','#FF4E3E');
   }
 }
@@ -568,16 +588,32 @@ function currentPersonal(now){
 async function loopLive(){
   if(S.mode!=='live' || !S.running) return;
   const now = performance.now();
-  // diagnóstico: câmera sem frames (permissão negada, track mutado ou tela preta)
-  if(cam.readyState<2 || !cam.videoWidth){
+  // câmera sem frames ou frame congelado: não pode continuar "detectando"
+  const health = Safety.cameraHealth({
+    readyState: cam.readyState, videoWidth: cam.videoWidth,
+    currentTime: cam.currentTime, lastTime: S.lastVideoTime,
+    lastAt: S.lastVideoTimeAt, now,
+  });
+  if(health !== 'ok'){
     if(!S.noFrameSince) S.noFrameSince = now;
-    if(now - S.noFrameSince > 5000 && !S.noFrameWarned){
-      S.noFrameWarned = true;
-      setChip('SEM IMAGEM');
-      speak('Câmera sem imagem. Verifique a permissão da câmera no navegador.', true);
-      logEvent('ERRO','câmera sem frames (readyState/videoWidth zerado)','#FF4E3E');
+    if(now - S.noFrameSince > 3000){
+      if(!S.noFrameWarned){
+        S.noFrameWarned = true;
+        onCameraLost(health);
+      }
+      return;
     }
-  } else { S.noFrameSince = 0; if(S.noFrameWarned){ S.noFrameWarned = false; setChip('DETECTANDO'); } }
+    requestAnimationFrame(loopLive);
+    return;
+  }
+  if(cam.currentTime !== S.lastVideoTime){
+    S.lastVideoTime = cam.currentTime;
+    S.lastVideoTimeAt = now;
+  }
+  if(S.noFrameSince){
+    S.noFrameSince = 0;
+    if(S.noFrameWarned){ S.noFrameWarned = false; setChip('DETECTANDO'); }
+  }
   // agenda a inferência do kNN ANTES do S.inferBusy: ela roda em background e
   // o alerta de COCO deste frame nunca espera pelo MobileNet
   scheduleKnn();
@@ -620,6 +656,11 @@ async function loopLive(){
 function startSim(){
   S.mode='sim';
   scene.classList.remove('opacity-0');
+  $('#alertTitle').textContent='Modo demonstração';
+  $('#alertSub').textContent='CENA VIRTUAL';
+  $('#riskTag').textContent='DEMO';
+  $('#alertCard').setAttribute('aria-label','Modo demonstração. Cena virtual.');
+  $('#alertCard').classList.remove('opacity-70');
   if(!S.simItems.length){
     for(let i=0;i<3;i++) spawnSim(Math.random()*0.6+0.1);
   }
@@ -718,23 +759,67 @@ function triggerSOS(){
   unlockAudio();
   vibrate([300,150,300,150,500]);
   beep(880, 0.15, 0.18, 0); setTimeout(()=>beep(880,0.15,0.18,0),250);
-  speak('Pedindo ajuda. Atenção ao redor. Se possível, peça apoio a alguém próximo.', true);
-  $('#liveStatus').textContent = 'SOS acionado pelo usuário.';
-  logEvent('SOS','pedido de ajuda acionado','#FF4E3E');
-  toast('SOS acionado — som e vibração de alerta');
+  speak(Safety.sosSpeech(), true);
+  $('#liveStatus').textContent = 'Alarme local de emergência acionado. Nenhuma chamada foi feita.';
+  logEvent('SOS','alarme local acionado (sem chamada)','#FF4E3E');
+  toast('Alarme local — nenhuma chamada feita');
+}
+function hideIntro(){
+  if(!openId){ try{ $('#btnMain').focus({preventScroll:true}); }catch(e){} }
+  const i = $('#intro');
+  i.classList.add('away');
+  i.setAttribute('aria-hidden','true');
+}
+function showIntro(){
+  const i = $('#intro');
+  i.classList.remove('away');
+  i.removeAttribute('aria-hidden');
+  if(!openId){ try{ i.focus({preventScroll:true}); }catch(e){} }
+}
+function announceReady(){
+  if(S.readyAnnounced) return;
+  if(!S.running || S.mode !== 'live' || !S.modelReady || !S.lastFrameTs) return;
+  S.readyAnnounced = true;
+  speak(Safety.readySpeech(), true);
+  vibrate([80,60,80]);
+  $('#liveStatus').textContent = 'Detecção ativa.';
+  $('#alertTitle').textContent='Detecção ativa';
+  $('#alertSub').textContent='MONITORANDO';
+  $('#riskTag').textContent='ATIVO';
+  $('#alertCard').setAttribute('aria-label','Detecção ativa. Monitorando.');
+  $('#alertCard').classList.remove('opacity-70');
+  logEvent('START','detecção ativa (primeiro frame válido)','#9DF53C');
+}
+function onCameraLost(reason){
+  if(!S.running || S.mode !== 'live') return;
+  logEvent('ERRO','câmera perdida: '+reason,'#FF4E3E');
+  vibrate([250,120,250,120,450]);
+  speak(Safety.cameraLostSpeech(), true);
+  stopAll();
+  setChip('SEM CÂMERA');
 }
 async function start(mode){
   if(S.running) return;
   S.running = true;
+  S.startedOnce = true;
   S.prefMode = mode;
+  S.readyAnnounced = false; S.lastFrameTs = 0;
+  S.lastVideoTime = 0; S.lastVideoTimeAt = performance.now();
+  S.resumeOnVisible = false;
+  S.pendingCmd = null; S.pendingAt = 0;
   S.stableKey=''; S.stableCount=0;
   S.lastFree = true; lastDetTs = performance.now();
   app.classList.add('running');
   $('#idleState').style.display='none';
-  $('#intro').classList.add('away');
+  $('#alertTitle').textContent='Ativando detecção';
+  $('#alertSub').textContent='AGUARDE A CÂMERA';
+  $('#riskTag').textContent='PREPARANDO';
+  $('#alertCard').setAttribute('aria-label','Ativando detecção. Aguarde a câmera.');
+  $('#alertCard').classList.add('opacity-70');
+  hideIntro();
   $('#btnMain').classList.add('stop');
   $('#btnMain').setAttribute('aria-pressed','true');
-  $('#btnMain').setAttribute('aria-label','Parar detecção. Segure por 2 segundos para pedir ajuda.');
+  $('#btnMain').setAttribute('aria-label','Parar detecção. Segure por 2 segundos para acionar o alarme de emergência. O alarme não faz chamadas.');
   $('#icPlay').classList.add('hidden'); $('#icStop').classList.remove('hidden');
   $('#mainLabel').textContent='PARAR';
   S.sessionT = 0;
@@ -752,7 +837,7 @@ async function start(mode){
   }catch(e){}
   // mic primeiro, fala depois: speak() pausa a escuta durante a fala (bug Android TTS×mic)
   if(S.autoVoice && !S.listening){ setListening(true, true); }
-  speak(mode==='live' ? 'Guia Visão ativado. Boa caminhada.' : 'Modo demonstração ativado.', true);
+  speak(mode==='live' ? Safety.startSpeech() : 'Modo demonstração ativado.', true);
   if(mode==='live') startLive(); else startSim();
   logEvent('START', mode==='live'?'detecção via câmera':'modo demonstração');
 }
@@ -771,9 +856,10 @@ function stopAll(){
   $('#btnMain').setAttribute('aria-label','Iniciar detecção de obstáculos');
   $('#icPlay').classList.remove('hidden'); $('#icStop').classList.add('hidden');
   $('#mainLabel').textContent='INICIAR';
-  $('#alertTitle').textContent='Caminho livre';
-  $('#alertSub').textContent='NENHUM OBSTÁCULO À FRENTE';
-  $('#alertCard').setAttribute('aria-label','Repetir último alerta: '+$('#alertTitle').textContent+'. '+$('#alertSub').textContent);
+  $('#alertTitle').textContent='Detecção pausada';
+  $('#alertSub').textContent='SEM ANÁLISE';
+  $('#riskTag').textContent='PARADO';
+  $('#alertCard').setAttribute('aria-label','Detecção pausada. Sem análise.');
   $('#alertCard').classList.add('opacity-70');
   $('#alertIconOk').classList.remove('hidden');
   $('#alertIconWarn').classList.add('hidden');
@@ -781,6 +867,9 @@ function stopAll(){
   clearInterval(S.timer);
   if(S.wake){ try{S.wake.release();}catch(e){} S.wake=null; }
   S.lastDets=[]; S.stableKey=''; S.stableCount=0; S.lastPan=0; S.closeness=0; S.noFrameSince=0; S.noFrameWarned=false; S.lastFree=true; S.lastRaw={n:0,top:'nada'}; S.small=null; S.personalHit=null;
+  S.readyAnnounced=false; S.lastFrameTs=0; S.lastVideoTime=0; S.lastVideoTimeAt=0;
+  S.pendingCmd=null; S.pendingAt=0; S.resumeOnVisible=false;
+  if(!openId){ try{ $('#btnMain').focus({preventScroll:true}); }catch(e){} }
   logEvent('STOP','detecção pausada','#FFC53D');
 }
 
@@ -797,9 +886,16 @@ function diagnose(){
   toast(linha); // no celular a telemetria nao aparece: o toast leva tudo junto
 }
 async function describe(){
+  const gate = Safety.canDescribe(S, performance.now());
+  if(gate !== 'ok'){
+    const msg = Safety.describeBlocked(gate);
+    speak(msg, true);
+    logEvent('DESC','descrição bloqueada ('+gate+')','#FFC53D');
+    return;
+  }
   const list = S.lastDets || [];
   const local = !list.length
-    ? 'Nenhum obstáculo detectado à frente. Caminho livre.'
+    ? Safety.freeSpeech()
     : `À sua frente: ${list.slice(0,3).map(d=>`${d.nome} ${d.dir}${d.dist?`, aproximadamente ${String(d.dist).replace('.',',')} metros`:''}`).join('. ')}.`;
   if(!CloudVision.available()){ speak(local, true); logEvent('DESC','local (nuvem indisponível): ' + local); return; }
   const src = (S.mode==='live') ? ((S.small && S.small.width) ? S.small : cam) : scene;
@@ -859,6 +955,32 @@ function setListening(on, quiet=false){
   }
 }
 function handleCommand(t){
+  const now = performance.now();
+  const age = S.pendingCmd ? now - S.pendingAt : 0;
+  const d = Safety.voiceDecision(t, { pending:S.pendingCmd, pendingAge:age });
+  if(d.action === 'cancel'){
+    S.pendingCmd = null; S.pendingAt = 0;
+    speak(Safety.cancelledSpeech(), true);
+    logEvent('VOZ','comando cancelado','#FFC53D');
+    return;
+  }
+  if(d.action === 'confirm-required'){
+    S.pendingCmd = { text:d.text, kind:d.kind };
+    S.pendingAt = now;
+    speak(d.prompt, true);
+    logEvent('VOZ','confirmação necessária: '+d.kind,'#FFC53D');
+    return;
+  }
+  if(d.action === 'confirm'){
+    const p = d.pending || S.pendingCmd;
+    S.pendingCmd = null; S.pendingAt = 0;
+    if(p) executeCommand(p.text);
+    return;
+  }
+  S.pendingCmd = null; S.pendingAt = 0;
+  executeCommand(d.text);
+}
+function executeCommand(t){
   // palavra/frase inteira: "sossegado" não dispara SOS e "acena" não é "cena"
   const has = (...ws)=>falaTem(t, ...ws);
   if(has('socorro','sos','emergência','emergencia','ajuda urgente')){ triggerSOS(); }
@@ -872,7 +994,7 @@ function handleCommand(t){
   else if(has('rápido','rapido')){ setRate(Math.min(1.5,S.rate+0.15)); speak('Fala mais rápida.'); }
   else if(has('devagar','lento','lenta')){ setRate(Math.max(0.6,S.rate-0.15)); speak('Fala mais devagar.'); }
   else if(has('diagnóstico','diagnostico','status do sistema')){ diagnose(); }
-  else if(has('ajuda','comandos')){ speak('Você pode dizer: iniciar, parar, o que tem à frente, repetir, vigiar, lista de vigilância, lanterna, diagnóstico, mais rápido, mais devagar.', true); openSheet('sheetHelp'); }
+  else if(has('ajuda','comandos')){ speak('Você pode dizer: guia visão iniciar, guia visão parar, guia visão socorro, o que tem à frente, repetir, vigiar, lista de vigilância, lanterna, diagnóstico, mais rápido, mais devagar. Comandos críticos pedem confirmação quando ditos sem a palavra guia visão.', true); openSheet('sheetHelp'); }
   else { speak('Comando não reconhecido. Diga ajuda para ouvir as opções.', true); }
 }
 
@@ -946,6 +1068,8 @@ $('#btnMain').addEventListener('pointerdown', ()=>{
   S.sosTimer = setTimeout(()=>{ S.sosFired = true; triggerSOS(); S.sosTimer=null; }, 2000);
 });
 ['pointerup','pointerleave','pointercancel'].forEach(ev=>$('#btnMain').addEventListener(ev, ()=>clearTimeout(S.sosTimer)));
+const sosBtn = $('#btnSOS');
+if(sosBtn) sosBtn.addEventListener('click', ()=>triggerSOS());
 $('#btnVoice').addEventListener('click', ()=>{ unlockAudio(); setListening(!S.listening); });
 $('#btnSettings').addEventListener('click', ()=>openSheet('sheetSettings'));
 $('#btnMyObst').addEventListener('click', ()=>{ renderMyObst(); openSheet('sheetObst'); });
@@ -1077,9 +1201,26 @@ setInterval(()=>{
   S.detCount = 0;
 },60000);
 
-/* wake lock re-acquire */
+/* visibilidade: nunca continuar "detectando" com o app fora de tela */
 document.addEventListener('visibilitychange', async ()=>{
-  if(document.visibilityState==='visible' && S.running){ try{ S.wake = await navigator.wakeLock?.request('screen'); }catch(e){} }
+  if(document.visibilityState === 'hidden'){
+    if(S.running){
+      S.resumeMode = S.mode;
+      if(S.listening) setListening(false, true);
+      stopAll();
+      S.resumeOnVisible = true;
+    }
+    return;
+  }
+  if(document.visibilityState !== 'visible') return;
+  try{ if(actx && actx.state === 'suspended') await actx.resume(); }catch(e){}
+  if(S.resumeOnVisible){
+    const mode = S.resumeMode || 'live';
+    S.resumeOnVisible = false;
+    start(mode);
+    return;
+  }
+  if(S.running){ try{ S.wake = await navigator.wakeLock?.request('screen'); }catch(e){} }
 });
 
 /* greeting + support notes */
@@ -1090,7 +1231,7 @@ setTimeout(()=>{ if(!('speechSynthesis' in window)) logEvent('SYS','TTS indispon
 // boot falado: foca a intro e anuncia instruções para quem não enxerga
 setTimeout(()=>{
   const intro = $('#intro');
-  if(!intro || intro.classList.contains('away')) return;
+  if(!intro || S.startedOnce || intro.classList.contains('away')) return;
   try{ intro.focus({preventScroll:true}); }catch(e){}
   $('#liveStatus').textContent = 'Guia Visão pronto. Toque em qualquer lugar para ativar a câmera, ou diga iniciar.';
   if('speechSynthesis' in window){
@@ -1098,8 +1239,8 @@ setTimeout(()=>{
   }
 }, 900);
 
-// debug handle (offline shell; sem alterar lógica)
-window.GuiaVisao = { S };
+// debug handle (offline shell; testes de integração e diagnóstico)
+window.GuiaVisao = { S, start, stopAll, describe, handleCommand, triggerSOS, setListening };
 
 /* ---------- PWA: service worker + offline (Task 3, append-only) ---------- */
 if('serviceWorker' in navigator){window.addEventListener('load',()=>{navigator.serviceWorker.register('./sw.js').then(r=>{r.onupdatefound=()=>{const n=r.installing;n.onstatechange=()=>{if(n.state==='installed'&&navigator.serviceWorker.controller){window.__SW_UPDATE__=true;toast('Nova versão disponível — recarregue');}};};}).catch(()=>{});});}
