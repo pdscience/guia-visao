@@ -1,5 +1,5 @@
 const CACHE='guia-visao-v13', MODEL='guia-visao-model-v1';
-const SHELL=['./','./index.html','./js/app.js','./js/safety.js','./js/obst.js','./js/cloud.js','./js/vigia.js','./vendor/tf.min.js','./vendor/coco-ssd.min.js','./vendor/mobilenet.min.js','./vendor/knn-classifier.min.js','./vendor/lucide.min.js','./manifest.webmanifest','./icons/icon-192.png','./icons/icon-512.png','./offline.html'];
+const SHELL=['./','./index.html','./vendor/tf.min.js','./vendor/coco-ssd.min.js','./vendor/mobilenet.min.js','./vendor/knn-classifier.min.js','./vendor/lucide.min.js','./manifest.webmanifest','./icons/icon-192.png','./icons/icon-512.png','./offline.html'];
 const PRECACHE = (self.__PRECACHE_MANIFEST && Array.isArray(self.__PRECACHE_MANIFEST)) ? self.__PRECACHE_MANIFEST : SHELL;
 self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>Promise.allSettled(PRECACHE.map(u=>c.add(u)))).then(()=>self.skipWaiting()));});
 self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>![CACHE,MODEL].includes(k)).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));});

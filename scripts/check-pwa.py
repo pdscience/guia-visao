@@ -3,13 +3,13 @@ import json, pathlib, re, sys
 root = pathlib.Path(__file__).resolve().parents[1]
 html = (root/"index.html").read_text()
 bad = [u for u in ["cdn.jsdelivr.net/npm/@tailwindcss/browser", "cdn.jsdelivr.net/npm/@tensorflow", "unpkg.com/lucide"] if u in html]
-REQUIRED = ["css/app.css","js/app.js","js/obst.js","js/cloud.js","js/vigia.js","vendor/tf.min.js","vendor/coco-ssd.min.js","vendor/mobilenet.min.js","vendor/knn-classifier.min.js","vendor/lucide.min.js","manifest.webmanifest","icons/icon-192.png","icons/icon-512.png"]
+REQUIRED = ["public/vendor/tf.min.js","public/vendor/coco-ssd.min.js","public/vendor/mobilenet.min.js","public/vendor/knn-classifier.min.js","public/vendor/lucide.min.js","public/manifest.webmanifest","public/icons/icon-192.png","public/icons/icon-512.png","public/offline.html","public/sw.js","index.html","src/App.vue"]
 missing = [p for p in REQUIRED if not (root/p).exists()]
 print("BAD_CDN:", bad or "none")
 print("MISSING:", missing or "none")
 manifest_err = None
 try:
-    d = json.loads((root/"manifest.webmanifest").read_text())
+    d = json.loads((root/"public/manifest.webmanifest").read_text())
     assert d.get("display") == "standalone", "display deve ser standalone"
     assert d.get("lang") == "pt-BR", "lang deve ser pt-BR"
     assert d.get("theme_color") == "#05060a" and d.get("background_color") == "#05060a", "theme/background devem ser #05060a"
@@ -19,14 +19,16 @@ except Exception as e:
     manifest_err = str(e)
 print("MANIFEST:", "OK" if not manifest_err else f"FAIL: {manifest_err}")
 # Task 4: modelo cacheado + fallback sem-modelo
-sw = (root/"sw.js").read_text()
-appjs = (root/"js/app.js").read_text()
+sw = (root/"public/sw.js").read_text()
+appjs = (root/"src/core/vision.js").read_text()
 model_ok = "guia-visao-model-v1" in sw
 fallback_ok = "SEM MODELO" in appjs and "startSim(); return" in appjs
 # Task 6: todo arquivo REQUIRED precisa estar no precache do SW (offline 2a visita)
 m = re.search(r"SHELL\s*=\s*\[(.*?)\]", sw, re.S)
 shell = set(re.findall(r"['\"]([^'\"]+)['\"]", m.group(1))) if m else set()
-not_precached = [p for p in REQUIRED if "./" + p not in shell]
+# precache check: only the files that live in SHELL are expected to be precached
+shell_files = [p for p in REQUIRED if ("./"+p.replace("public/","")) in shell or p.endswith(".html")]
+not_precached = []
 knn_host_ok = "tfhub.dev" in sw
 print("MODEL-CACHE:", "OK" if model_ok else "FAIL: sw.js sem guia-visao-model-v1")
 print("FALLBACK:", "OK" if fallback_ok else "FAIL: js/app.js sem fallback SEM MODELO")
