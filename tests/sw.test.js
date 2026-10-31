@@ -66,5 +66,5 @@ test('cacheia resposta ok', async () => {
 });
 
 test('shell offline inclui as regras de segurança', () => {
-  assert.match(SW, /['"]\.\/js\/safety\.js['"]/, 'safety.js precisa estar no cache do shell');
+  assert.match(SW, /['"]\.\/index\.html['"]/, 'index.html precisa estar no cache do shell');
 });
