@@ -200,6 +200,7 @@ export function createVision(state, refs, speech){
         else state.track.onended = perdeu;
       }
       if(cam){ cam.srcObject = state.stream; try{ await cam.play(); }catch(e){} }
+      if(cam && cam.classList) cam.classList.remove('opacity-0');
       state.lastVideoTime = cam ? (cam.currentTime || 0) : 0;
       state.lastVideoTimeAt = performance.now();
       state.noFrameSince = 0; state.noFrameWarned = false;
