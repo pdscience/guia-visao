@@ -32,15 +32,15 @@
 
   <!-- ================= DEVICE ================= -->
   <div id="device" class="relative w-full h-dvh md:h-[min(880px,94dvh)] md:w-auto md:aspect-[9/19.2] md:p-[11px] md:rounded-[3.4rem] md:bg-gradient-to-b md:from-[#181b22] md:via-[#0b0d12] md:to-[#14161c] md:ring-1 md:ring-white/12 md:shadow-[0_60px_140px_-30px_rgba(0,0,0,.95),0_0_90px_-30px_rgba(157,245,60,.12)]">
-    <div id="app" class="relative h-full w-full overflow-hidden bg-black md:rounded-[2.8rem]" role="main" aria-label="Aplicativo Guia Visão">
+    <div id="app" ref="appRef" class="relative h-full w-full overflow-hidden bg-black md:rounded-[2.8rem]" role="main" aria-label="Aplicativo Guia Visão">
 
       <!-- notch (desktop frame) -->
       <div class="hidden md:block absolute top-2.5 left-1/2 -translate-x-1/2 w-28 h-[26px] bg-black rounded-full z-50 ring-1 ring-white/8 pointer-events-none"></div>
 
       <!-- camera + sim + overlay -->
-      <video id="cam" class="absolute inset-0 w-full h-full object-cover opacity-0 transition-opacity duration-700" autoplay playsinline muted aria-label="Imagem da câmera traseira"></video>
-      <canvas id="scene" class="absolute inset-0 w-full h-full opacity-0 transition-opacity duration-700" aria-hidden="true"></canvas>
-      <canvas id="overlay" class="absolute inset-0 w-full h-full z-10 pointer-events-none" aria-hidden="true"></canvas>
+<video ref="camRef" id="cam" class="absolute inset-0 w-full h-full object-cover opacity-0 transition-opacity duration-700" autoplay playsinline muted aria-label="Imagem da câmera traseira"></video>
+<canvas ref="sceneRef" id="scene" class="absolute inset-0 w-full h-full opacity-0 transition-opacity duration-700" aria-hidden="true"></canvas>
+<canvas ref="overlayRef" id="overlay" class="absolute inset-0 w-full h-full z-10 pointer-events-none" aria-hidden="true"></canvas>
 
       <!-- HUD dressing -->
       <div class="hud-corners"><span></span><span></span><span></span><span></span></div>
@@ -302,8 +302,73 @@
 </template>
 
 <script setup>
-import { onMounted } from 'vue';
+import { onMounted, ref } from 'vue';
+import { createController } from './core/controller.js';
+
+const appRef = ref(null);
+const camRef = ref(null);
+const overlayRef = ref(null);
+const sceneRef = ref(null);
+
+let state = null;
+let ctrl = null;
+
 onMounted(() => {
+  state = {
+    mode:'idle', running:false, autoVoice:false, tts:true, rate:1, vib:true, son:true, sens:1,
+    knnOn:true, knnReady:false, knnCount:{}, telemetry:[], alert:{title:'Detecção pausada',sub:'SEM ANÁLISE',tag:'PARADO',icon:'ok',aria:'Detecção pausada. Sem análise.',outline:'',dim:true},
+    chip:{status:'PRONTO',fps:'-- FPS',offline:false}, main:{pressed:false,label:'INICIAR',stop:false},
+    stats:{det:0,voice:0,vib:0,time:'00:00'}, prefs:{}, liveAlert:'', liveStatus:'', idleVisible:true, introVisible:true,
+    sheet:null, toast:{text:'',show:false}, runningClass:false, dangerPulse:false, lastDets:[], lastRaw:{n:0,top:'nada'},
+    personalHit:null, ttsErr:null, ttsNoVoiceLogged:false, inferErr:null, inferErrLogged:false, simItems:[], lastSpoke:0, lastVib:0, lastKey:'', stableKey:'', stableCount:0, lastPan:0, closeness:0, risk:0, noFrameSince:0, noFrameWarned:false, lastFree:true, lastFrameTs:0, lastVideoTime:0, lastVideoTimeAt:Date.now(), readyAnnounced:false, pendingCmd:null, pendingAt:0, sessionT:0, timer:null, wake:null, inferBusy:false, modelReady:false, modelBase:null, stream:null, track:null, torchOn:false, listening:false, recog:null, small:null, sctx:null, sw:0, sh:0, actx:null, voiceCount:0, vibCount:0, detCount:0, frames:0, roadOff:0, simLast:0, vibrate:(p)=>{}, toastFn:(m)=>{}, speakStart:0, micPaused:false, ttsBusy:false, ttsQueue:null, speakSeq:0, micStop:null, voice:null, autoVoice:false, knnNames:{}, freeSpeech:'Nenhum obstáculo reconhecido agora. Isso não garante caminho livre; siga com cautela.', lastDetTs:Date.now(), rateVal:'1.0×', rgRate:null, rgSens:null,
+  };
+  ctrl = createController({ state, refs: { root: appRef.value, video: camRef.value, overlay: overlayRef.value, scene: sceneRef.value } });
+  state.toastFn = (m) => { state.toast.text = m; state.toast.show = true; setTimeout(()=>{ state.toast.show=false; }, 2600); };
+  // wire main button
+  const btnMain = document.getElementById('btnMain');
+  if (btnMain) {
+    btnMain.addEventListener('click', () => {
+      if (state.sosFired) { state.sosFired = false; return; }
+      if (state.running) { ctrl.stopAll(); } else { ctrl.start(state.prefMode || 'live'); }
+    });
+    let sosTimer = null;
+    btnMain.addEventListener('pointerdown', () => {
+      state.sosFired = false;
+      clearTimeout(sosTimer);
+      sosTimer = setTimeout(() => { state.sosFired = true; ctrl.triggerSOS(); sosTimer = null; }, 2000);
+    });
+    ['pointerup','pointerleave','pointercancel'].forEach(ev => btnMain.addEventListener(ev, () => clearTimeout(sosTimer)));
+  }
+  // other buttons
+  const bind = (id, fn) => { const el = document.getElementById(id); if (el) el.addEventListener('click', fn); };
+  bind('btnSOS', () => ctrl.triggerSOS());
+  bind('btnVoice', () => { ctrl.unlockAudio(); ctrl.setListening(!state.listening); });
+  bind('btnSettings', () => ctrl.openSheet('sheetSettings'));
+  bind('btnHelp', () => ctrl.openSheet('sheetHelp'));
+  bind('btnTorch', () => { ctrl.unlockAudio(); ctrl.setTorch(!state.torchOn); });
+  bind('btnMyObst', () => { ctrl.openSheet('sheetObst'); });
+  bind('btnStartCam', (e) => { e.stopPropagation(); ctrl.unlockAudio(); ctrl.start('live'); });
+  const intro = document.getElementById('intro');
+  if (intro) intro.addEventListener('click', () => { if (!intro.classList.contains('away')) { ctrl.unlockAudio(); ctrl.start('live'); } });
+  const alertCard = document.getElementById('alertCard');
+  if (alertCard) alertCard.addEventListener('click', () => ctrl.repeatAlert());
+  const backdrop = document.getElementById('backdrop');
+  if (backdrop) backdrop.addEventListener('click', () => ctrl.closeSheets());
+  document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => ctrl.closeSheets()));
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') ctrl.closeSheets(); });
+  // prefs apply
+  // (simplified: leave defaults)
   try { window.lucide?.createIcons(); } catch (e) {}
+  // boot greeting
+  setTimeout(() => {
+    if (!state.startedOnce && state.introVisible) {
+      try { document.getElementById('intro')?.focus(); } catch (e) {}
+      if ('speechSynthesis' in window) ctrl.speak ? ctrl.speak('Guia Visão pronto. Toque em qualquer lugar da tela para ativar a câmera.') : null;
+    }
+  }, 900);
+  // expose
+  window.GuiaVisao = ctrl;
 });
 </script>
+EOF
+echo done
