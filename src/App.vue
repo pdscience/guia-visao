@@ -72,15 +72,15 @@
       <div class="absolute top-[max(4.6rem,calc(env(safe-area-inset-top)+3.4rem))] md:top-28 inset-x-0 z-30 flex flex-col items-center gap-2 pointer-events-none">
         <div class="chip font-mono text-white/75">
           <span class="dot"></span>
-          <span id="chipStatus">PRONTO</span>
+          <span id="chipStatus">{{ state.chip.status }}</span>
           <span class="text-white/25">|</span>
           <span id="chipFps" class="text-white/40">-- FPS</span>
         </div>
-        <span id="chipOffline" class="chip font-mono !text-[10px] !text-[#FFC53D] !border-[#FFC53D]/40 hidden">MODO OFFLINE</span>
+        <span id="chipOffline" class="chip font-mono !text-[10px] !text-[#FFC53D] !border-[#FFC53D]/40" :class="{ hidden: !state.chip.offline }">MODO OFFLINE</span>
       </div>
 
       <!-- idle empty state -->
-      <div id="idleState" class="absolute inset-0 z-20 grid place-items-center pointer-events-none">
+      <div id="idleState" class="absolute inset-0 z-20 grid place-items-center pointer-events-none" :style="{ display: state.idleVisible ? 'grid' : 'none' }">
         <div class="text-center px-8">
           <div class="mx-auto w-20 h-20 rounded-3xl border border-white/12 bg-white/4 grid place-items-center text-white/40 mb-5">
             <i data-lucide="scan-line" class="w-9 h-9"></i>
@@ -92,17 +92,17 @@
 
       <!-- ================= BOTTOM: alert + controls ================= -->
       <div class="absolute bottom-0 inset-x-0 z-30 px-5 pb-[max(1.4rem,env(safe-area-inset-bottom))]">
-        <button id="alertCard" class="mb-5 opacity-70" aria-label="Detecção pausada. Sem análise.">
+        <button id="alertCard" class="mb-5" :class="{ 'opacity-70': state.alert.dim }" :aria-label="state.alert.aria" :style="{ outline: state.alert.outline }">
           <span class="riskdot w-12 h-12 rounded-2xl grid place-items-center flex-none text-[#0b0e05]">
-            <span id="alertIconOk"><i data-lucide="circle-check" class="w-6 h-6"></i></span>
-            <span id="alertIconWarn" class="hidden"><i data-lucide="circle-alert" class="w-6 h-6"></i></span>
-            <span id="alertIconDanger" class="hidden"><i data-lucide="triangle-alert" class="w-6 h-6"></i></span>
+<span id="alertIconOk" :class="{ hidden: state.alert.icon !== 'ok' }"><i data-lucide="circle-check" class="w-6 h-6"></i></span>
+<span id="alertIconWarn" :class="{ hidden: state.alert.icon !== 'warn' }"><i data-lucide="circle-alert" class="w-6 h-6"></i></span>
+<span id="alertIconDanger" :class="{ hidden: state.alert.icon !== 'danger' }"><i data-lucide="triangle-alert" class="w-6 h-6"></i></span>
           </span>
           <span class="flex-1 min-w-0">
-            <span id="alertTitle" class="block font-extrabold text-lg leading-tight tracking-tight text-white">Detecção pausada</span>
-            <span id="alertSub" class="block font-mono text-[10px] tracking-[.18em] text-white/50 mt-1">SEM ANÁLISE</span>
+<span id="alertTitle" class="block font-extrabold text-lg leading-tight tracking-tight text-white">{{ state.alert.title }}</span>
+<span id="alertSub" class="block font-mono text-[10px] tracking-[.18em] text-white/50 mt-1">{{ state.alert.sub }}</span>
           </span>
-          <span id="riskTag" class="font-mono text-[10px] tracking-[.15em] rounded-full px-3 py-1.5 flex-none">PARADO</span>
+          <span id="riskTag" class="font-mono text-[10px] tracking-[.15em] rounded-full px-3 py-1.5 flex-none">{{ state.alert.tag }}</span>
         </button>
 
         <div class="flex items-end justify-center gap-7" role="group" aria-label="Controles principais">
@@ -113,11 +113,11 @@
             <span class="font-mono text-[8.5px] tracking-[.25em] text-white/40">VOZ</span>
           </div>
           <div class="flex flex-col items-center gap-2">
-            <button id="btnMain" aria-label="Iniciar detecção de obstáculos" aria-pressed="false">
-              <span id="icPlay"><i data-lucide="play" class="w-10 h-10 ml-1"></i></span>
-              <span id="icStop" class="hidden"><i data-lucide="square" class="w-8 h-8"></i></span>
+<button id="btnMain" :class="{ stop: state.main.stop }" :aria-pressed="state.main.pressed" aria-label="Iniciar detecção de obstáculos">
+<span id="icPlay" :class="{ hidden: state.main.stop }"><i data-lucide="play" class="w-10 h-10 ml-1"></i></span>
+<span id="icStop" :class="{ hidden: !state.main.stop }"><i data-lucide="square" class="w-8 h-8"></i></span>
             </button>
-            <span id="mainLabel" class="font-mono text-[8.5px] tracking-[.25em] text-white/55">INICIAR</span>
+            <span id="mainLabel" class="font-mono text-[8.5px] tracking-[.25em] text-white/55">{{ state.main.label }}</span>
           </div>
           <div class="flex flex-col items-center gap-2">
             <button id="btnSettings" class="ctl-secondary" aria-label="Abrir configurações">
@@ -130,7 +130,7 @@
       </div>
 
       <!-- ================= SETTINGS SHEET ================= -->
-      <section id="sheetSettings" class="sheet" role="dialog" aria-modal="true" aria-label="Configurações" tabindex="-1">
+      <section id="sheetSettings" class="sheet" :class="{ open: state.sheet === 'sheetSettings' }" role="dialog" aria-modal="true" aria-label="Configurações" tabindex="-1">
         <div class="mx-2 mb-2 rounded-[28px] bg-[#0e1016]/95 backdrop-blur-2xl border border-white/10 p-6 pb-[max(1.6rem,env(safe-area-inset-bottom))]">
           <div class="flex items-center justify-between mb-6">
             <h2 class="font-black text-lg tracking-tight flex items-center gap-2.5"><i data-lucide="sliders-horizontal" class="w-5 h-5 text-[#9DF53C]"></i>Ajustes de acessibilidade</h2>
@@ -198,7 +198,7 @@
       </section>
 
       <!-- ================= HELP SHEET ================= -->
-      <section id="sheetHelp" class="sheet" role="dialog" aria-modal="true" aria-label="Ajuda e comandos de voz" tabindex="-1">
+      <section id="sheetHelp" class="sheet" :class="{ open: state.sheet === 'sheetHelp' }" role="dialog" aria-modal="true" aria-label="Ajuda e comandos de voz" tabindex="-1">
         <div class="mx-2 mb-2 rounded-[28px] bg-[#0e1016]/95 backdrop-blur-2xl border border-white/10 p-6 pb-[max(1.6rem,env(safe-area-inset-bottom))]">
           <div class="flex items-center justify-between mb-5">
             <h2 class="font-black text-lg tracking-tight flex items-center gap-2.5"><i data-lucide="mic" class="w-5 h-5 text-[#9DF53C]"></i>Comandos de voz</h2>
@@ -221,7 +221,7 @@
         </div>
       </section>
 
-<section id="sheetObst" class="sheet" role="dialog" aria-modal="true" aria-label="Meus obstáculos" tabindex="-1">
+<section id="sheetObst" class="sheet" :class="{ open: state.sheet === 'sheetObst' }" role="dialog" aria-modal="true" aria-label="Meus obstáculos" tabindex="-1">
   <div class="mx-2 mb-2 rounded-[28px] bg-[#0e1016]/95 backdrop-blur-2xl border border-white/10 p-6">
     <div class="flex items-center justify-between mb-5"><h2 class="font-black text-lg">Meus obstáculos</h2><button class="icon-btn" data-close aria-label="Fechar"><i data-lucide="x" class="w-5 h-5"></i></button></div>
     <ul id="myObstList" class="space-y-2.5 text-[14px]"></ul>
@@ -231,13 +231,13 @@
     <p id="trainStatus" class="mt-3 font-mono text-[10px] tracking-[.15em] text-white/50" aria-live="polite">PRONTO PARA CADASTRAR</p>
   </div>
 </section>
-      <div id="backdrop"></div>
+      <div id="backdrop" :class="{ open: !!state.sheet }"></div>
 
       <!-- toast -->
       <div id="toast" class="chip font-mono !text-[10.5px] text-white/85 !bg-[#0e1016]/90" role="status" aria-live="polite"></div>
 
       <!-- ================= INTRO ================= -->
-      <div id="intro" class="absolute inset-0 z-[90] bg-[#07080d] flex flex-col" tabindex="-1" role="dialog" aria-modal="true" aria-label="Bem-vindo ao Guia Visão. Toque em qualquer lugar para ativar a câmera com voz.">
+      <div id="intro" class="absolute inset-0 z-[90] bg-[#07080d] flex flex-col" :class="{ away: !state.introVisible }" tabindex="-1" role="dialog" aria-modal="true">
         <div class="grain"></div>
         <div class="absolute -top-24 -right-24 w-72 h-72 rounded-full bg-[#9DF53C]/10 blur-[90px]"></div>
         <div class="absolute -bottom-32 -left-24 w-80 h-80 rounded-full bg-[#FF4E3E]/8 blur-[100px]"></div>
@@ -302,7 +302,7 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue';
+import { onMounted, ref, reactive } from 'vue';
 import { createController } from './core/controller.js';
 
 const appRef = ref(null);
@@ -310,21 +310,21 @@ const camRef = ref(null);
 const overlayRef = ref(null);
 const sceneRef = ref(null);
 
-let state = null;
+const state = reactive({
+  mode:'idle', running:false, autoVoice:false, tts:true, rate:1, vib:true, son:true, sens:1,
+  knnOn:true, knnReady:false, knnCount:{}, telemetry:[], alert:{title:'Detecção pausada',sub:'SEM ANÁLISE',tag:'PARADO',icon:'ok',aria:'Detecção pausada. Sem análise.',outline:'',dim:true},
+  chip:{status:'PRONTO',fps:'-- FPS',offline:false}, main:{pressed:false,label:'INICIAR',stop:false},
+  stats:{det:0,voice:0,vib:0,time:'00:00'}, prefs:{}, liveAlert:'', liveStatus:'', idleVisible:true, introVisible:true,
+  sheet:null, toast:{text:'',show:false}, runningClass:false, dangerPulse:false, lastDets:[], lastRaw:{n:0,top:'nada'},
+  personalHit:null, ttsErr:null, ttsNoVoiceLogged:false, inferErr:null, inferErrLogged:false, simItems:[], lastSpoke:0, lastVib:0, lastKey:'', stableKey:'', stableCount:0, lastPan:0, closeness:0, risk:0, noFrameSince:0, noFrameWarned:false, lastFree:true, lastFrameTs:0, lastVideoTime:0, lastVideoTimeAt:Date.now(), readyAnnounced:false, pendingCmd:null, pendingAt:0, sessionT:0, timer:null, wake:null, inferBusy:false, modelReady:false, modelBase:null, stream:null, track:null, torchOn:false, listening:false, recog:null, small:null, sctx:null, sw:0, sh:0, actx:null, voiceCount:0, vibCount:0, detCount:0, frames:0, roadOff:0, simLast:0, vibrate:(p)=>{}, toastFn:(m)=>{}, speakStart:0, micPaused:false, ttsBusy:false, ttsQueue:null, speakSeq:0, micStop:null, voice:null, autoVoice:false, knnNames:{}, freeSpeech:'Nenhum obstáculo reconhecido agora. Isso não garante caminho livre; siga com cautela.', lastDetTs:Date.now(), rateVal:'1.0×', rgRate:null, rgSens:null, prefMode:'live', startedOnce:false, resumeOnVisible:false, resumeMode:'live', sosFired:false, lastTap:0,
+});
+
 let ctrl = null;
 
 onMounted(() => {
-  state = {
-    mode:'idle', running:false, autoVoice:false, tts:true, rate:1, vib:true, son:true, sens:1,
-    knnOn:true, knnReady:false, knnCount:{}, telemetry:[], alert:{title:'Detecção pausada',sub:'SEM ANÁLISE',tag:'PARADO',icon:'ok',aria:'Detecção pausada. Sem análise.',outline:'',dim:true},
-    chip:{status:'PRONTO',fps:'-- FPS',offline:false}, main:{pressed:false,label:'INICIAR',stop:false},
-    stats:{det:0,voice:0,vib:0,time:'00:00'}, prefs:{}, liveAlert:'', liveStatus:'', idleVisible:true, introVisible:true,
-    sheet:null, toast:{text:'',show:false}, runningClass:false, dangerPulse:false, lastDets:[], lastRaw:{n:0,top:'nada'},
-    personalHit:null, ttsErr:null, ttsNoVoiceLogged:false, inferErr:null, inferErrLogged:false, simItems:[], lastSpoke:0, lastVib:0, lastKey:'', stableKey:'', stableCount:0, lastPan:0, closeness:0, risk:0, noFrameSince:0, noFrameWarned:false, lastFree:true, lastFrameTs:0, lastVideoTime:0, lastVideoTimeAt:Date.now(), readyAnnounced:false, pendingCmd:null, pendingAt:0, sessionT:0, timer:null, wake:null, inferBusy:false, modelReady:false, modelBase:null, stream:null, track:null, torchOn:false, listening:false, recog:null, small:null, sctx:null, sw:0, sh:0, actx:null, voiceCount:0, vibCount:0, detCount:0, frames:0, roadOff:0, simLast:0, vibrate:(p)=>{}, toastFn:(m)=>{}, speakStart:0, micPaused:false, ttsBusy:false, ttsQueue:null, speakSeq:0, micStop:null, voice:null, autoVoice:false, knnNames:{}, freeSpeech:'Nenhum obstáculo reconhecido agora. Isso não garante caminho livre; siga com cautela.', lastDetTs:Date.now(), rateVal:'1.0×', rgRate:null, rgSens:null,
-  };
   ctrl = createController({ state, refs: { root: appRef.value, video: camRef.value, overlay: overlayRef.value, scene: sceneRef.value } });
   state.toastFn = (m) => { state.toast.text = m; state.toast.show = true; setTimeout(()=>{ state.toast.show=false; }, 2600); };
-  // wire main button
+  state.vibrate = (p) => { if(!state.vib || !navigator.vibrate) return; navigator.vibrate(p); state.vibCount = (state.vibCount||0)+1; state.stats.vib = state.vibCount; };
   const btnMain = document.getElementById('btnMain');
   if (btnMain) {
     btnMain.addEventListener('click', () => {
@@ -339,7 +339,6 @@ onMounted(() => {
     });
     ['pointerup','pointerleave','pointercancel'].forEach(ev => btnMain.addEventListener(ev, () => clearTimeout(sosTimer)));
   }
-  // other buttons
   const bind = (id, fn) => { const el = document.getElementById(id); if (el) el.addEventListener('click', fn); };
   bind('btnSOS', () => ctrl.triggerSOS());
   bind('btnVoice', () => { ctrl.unlockAudio(); ctrl.setListening(!state.listening); });
@@ -356,19 +355,7 @@ onMounted(() => {
   if (backdrop) backdrop.addEventListener('click', () => ctrl.closeSheets());
   document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => ctrl.closeSheets()));
   document.addEventListener('keydown', e => { if (e.key === 'Escape') ctrl.closeSheets(); });
-  // prefs apply
-  // (simplified: leave defaults)
   try { window.lucide?.createIcons(); } catch (e) {}
-  // boot greeting
-  setTimeout(() => {
-    if (!state.startedOnce && state.introVisible) {
-      try { document.getElementById('intro')?.focus(); } catch (e) {}
-      if ('speechSynthesis' in window) ctrl.speak ? ctrl.speak('Guia Visão pronto. Toque em qualquer lugar da tela para ativar a câmera.') : null;
-    }
-  }, 900);
-  // expose
   window.GuiaVisao = ctrl;
 });
 </script>
-EOF
-echo done
