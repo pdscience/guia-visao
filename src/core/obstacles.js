@@ -113,9 +113,12 @@ const PRESETS = [
   // residenciais / muito comuns no Brasil
   'Portão','Muro','Escada','Porta',
 ];
-async function startTraining(nome, camEl, onTick){
+async function startTraining(nome, camEl, onTick, opts = {}){
+  const state = opts.state || (typeof S !== 'undefined' ? S : null);
+  const speakFn = opts.speak || (typeof speak !== 'undefined' ? speak : (typeof window !== 'undefined' && window.speak) || (()=>{}));
+  const beepFn = opts.beep || (typeof beep !== 'undefined' ? beep : (typeof window !== 'undefined' && window.beep) || (()=>{}));
   // aborta se a detecção parar no meio: sem isso, o treino seguiria com frames congelados
-  const ativo = ()=> S.running && S.mode==='live' && camEl && camEl.videoWidth;
+  const ativo = ()=> (state ? (state.running && state.mode==='live') : true) && camEl && camEl.videoWidth;
   const interrompido = ()=>{ if(!ativo()) throw new Error('Treino interrompido: detecção parada.'); };
   interrompido();
   // o carregamento do MobileNet é assíncrono em segundo plano: garante os pesos antes de fotografar
@@ -123,20 +126,20 @@ async function startTraining(nome, camEl, onTick){
   interrompido();
   const id = 'm' + Date.now().toString(36);
   const labelsAntes = new Set(Object.keys(MeuKNn.clf.getClassifierDataset()).filter(l => l !== 'fundo'));
-  speak('Primeiro aponte para outro lugar, sem o obstáculo. Vou fotografar o fundo.', true);
+  speakFn('Primeiro aponte para outro lugar, sem o obstáculo. Vou fotografar o fundo.', true);
   for(let i = 1; i <= 5; i++){
     interrompido();
     MeuKNn.addExampleFromVideo(camEl, 'fundo');
     onTick?.(i, 15);
-    try{ beep(660, 0.07, 0.12, 0); }catch(e){}
+    try{ beepFn(660, 0.07, 0.12, 0); }catch(e){}
     await new Promise(r => setTimeout(r, 1000));
   }
-  speak(`Fotografando ${nome}. Mexa um pouco o celular.`, true);
+  speakFn(`Fotografando ${nome}. Mexa um pouco o celular.`, true);
   for(let i = 1; i <= 10; i++){
     interrompido();
     MeuKNn.addExampleFromVideo(camEl, id);
     onTick?.(5 + i, 15);
-    try{ beep(880, 0.07, 0.12, 0); }catch(e){}
+    try{ beepFn(880, 0.07, 0.12, 0); }catch(e){}
     await new Promise(r => setTimeout(r, 1000));
   }
   interrompido();
@@ -148,7 +151,8 @@ async function startTraining(nome, camEl, onTick){
   await ObstDB.save({ id:'fundo', nome:'Fundo', dataset:fundoDs, count:5, criadasEm:Date.now() });
   await ObstDB.save({ id, nome, dataset:mine, count:10, criadasEm:Date.now() });
   MeuKNn.nomes[id] = nome;
-  speak(`${nome} cadastrado com 10 fotos.`, true);
+  speakFn(`${nome} cadastrado com 10 fotos.`, true);
+  if(state && state.knnCount){ try{ state.knnCount = MeuKNn.count(); }catch(e){} }
   return id;
 }
 /* js/obst.js — fusão (label só, sem cantos na tela cheia) */
@@ -220,3 +224,5 @@ async function renderMyObst(){
 }
 
 export { ObstDB, MeuKNn, startTraining, fusePersonal, PRESETS, renderMyObst };
+
+export default { ObstDB, MeuKNn, startTraining, fusePersonal, PRESETS, renderMyObst };

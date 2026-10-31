@@ -1,5 +1,4 @@
 export function createSpeech(state){
-  const $ = s => (typeof document !== 'undefined' ? document.querySelector(s) : null);
   function logEvent(kind, msg, tone){
     try{
       if(!state.telemetry) state.telemetry = [];
@@ -114,7 +113,7 @@ function speakNow(text, retry=false){
     finishSpeak();
     return;
   }
-  state.voiceCount++; $('#statVoice').textContent = state.voiceCount;
+  state.voiceCount++; state.stats = state.stats || {}; state.stats.voice = state.voiceCount;
   logEvent('VOZ', text, '#9DF53C');
 }
 function finishSpeak(){
@@ -128,7 +127,7 @@ function finishSpeak(){
   resumeMic();
 }
 function speak(text, interrupt=false){
-  $('#liveAlert').textContent = text;
+  state.liveAlert = text;
   if(!state.tts || !('speechSynthesis' in window)) return;
   const micReady = pauseMic();
   if(interrupt){
