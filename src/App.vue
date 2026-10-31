@@ -302,4 +302,8 @@
 </template>
 
 <script setup>
+import { onMounted } from 'vue';
+onMounted(() => {
+  try { window.lucide?.createIcons(); } catch (e) {}
+});
 </script>
