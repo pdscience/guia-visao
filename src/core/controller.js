@@ -157,9 +157,13 @@ export function createController({ state, refs }){
   function openSheet(id){
     closeSheets();
     state.sheet = id;
+    const el = document.getElementById(id); if(el) el.classList.add('open');
+    const bd = document.getElementById('backdrop'); if(bd) bd.classList.add('open');
   }
   function closeSheets(){
     state.sheet = null;
+    document.querySelectorAll('.sheet').forEach(s=>s.classList.remove('open'));
+    const bd = document.getElementById('backdrop'); if(bd) bd.classList.remove('open');
   }
 
   function triggerSOS(){
@@ -174,8 +178,8 @@ export function createController({ state, refs }){
     (state.toastFn||(()=>{}))('Alarme local — nenhuma chamada feita');
   }
 
-  function hideIntro(){ state.introVisible = false; }
-  function showIntro(){ state.introVisible = true; }
+  function hideIntro(){ state.introVisible = false; const i = document.getElementById('intro'); if(i){ i.classList.add('away'); i.setAttribute('aria-hidden','true'); } }
+  function showIntro(){ state.introVisible = true; const i = document.getElementById('intro'); if(i){ i.classList.remove('away'); i.removeAttribute('aria-hidden'); } }
 
   function announceReady(){
     if(state.readyAnnounced) return;
@@ -216,6 +220,7 @@ export function createController({ state, refs }){
     state.lastFree = true; state.lastDetTs = performance.now();
     state.runningClass = true;
     state.idleVisible = false;
+    const idle = document.getElementById('idleState'); if(idle) idle.style.display='none';
     state.alert = state.alert || {};
     state.alert.title='Ativando detecção';
     state.alert.sub='AGUARDE A CÂMERA';
@@ -253,6 +258,7 @@ export function createController({ state, refs }){
     setTorch(false,true);
     setRisk(0); setChip('PRONTO','--');
     state.idleVisible = true;
+    const idle = document.getElementById('idleState'); if(idle) idle.style.display='grid';
     state.main.pressed = false;
     state.main.stop = false;
     state.main.label = 'INICIAR';
