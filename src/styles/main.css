@@ -1,12 +1,12 @@
 @import "tailwindcss";
 
 :root{
-    --safe:#3B82F6;
+    --safe:#00FF41;
     --warn:#FFC53D;
     --danger:#FF4E3E;
     --risk:#9DF53C;
     --ink:#eef1ea;
-    --bg:#050a14;
+    --bg:#020a02;
   }
   html,body{height:100%;background:var(--bg);}
   body{font-family:'Archivo',system-ui,sans-serif;color:var(--ink);-webkit-tap-highlight-color:transparent;overflow-x:hidden;}
@@ -20,7 +20,7 @@
   /* ---- stage ambience ---- */
   #stage{
     background:
-      radial-gradient(900px 500px at 12% -10%, rgba(59,130,246,.07), transparent 60%),
+      radial-gradient(900px 500px at 12% -10%, rgba(0,255,65,.07), transparent 60%),
       radial-gradient(800px 520px at 105% 110%, rgba(255,78,62,.05), transparent 60%),
       var(--bg);
   }
@@ -48,7 +48,7 @@
 
   .scanbeam{
     position:absolute;left:0;right:0;height:120px;top:-140px;z-index:15;pointer-events:none;opacity:0;
-    background:linear-gradient(180deg,transparent,rgba(59,130,246,.10) 55%,rgba(59,130,246,.30));
+    background:linear-gradient(180deg,transparent,rgba(0,255,65,.10) 55%,rgba(0,255,65,.30));
     filter:blur(1px);
   }
   .running .scanbeam{opacity:1;animation:beam 3.2s cubic-bezier(.45,0,.35,1) infinite;}
@@ -68,18 +68,18 @@
     color:#cfd5cc;transition:transform .15s ease,background .3s,border-color .3s,color .3s;
   }
   .ctl-secondary:active{transform:scale(.92);}
-  .ctl-secondary.on{background:var(--safe);color:#0a0d05;border-color:transparent;box-shadow:0 0 34px -6px rgba(59,130,246,.7);}
-  #btnVoice.listening{background:#f4ffe0;color:#0a0d05;border-color:var(--safe);box-shadow:0 0 0 0 rgba(59,130,246,.5);animation:breath 1.6s ease-out infinite;}
-  @keyframes breath{0%{box-shadow:0 0 0 0 rgba(59,130,246,.45)}100%{box-shadow:0 0 0 22px rgba(59,130,246,0)}}
+  .ctl-secondary.on{background:var(--safe);color:#0a0d05;border-color:transparent;box-shadow:0 0 34px -6px rgba(0,255,65,.7);}
+  #btnVoice.listening{background:#f4ffe0;color:#0a0d05;border-color:var(--safe);box-shadow:0 0 0 0 rgba(0,255,65,.5);animation:breath 1.6s ease-out infinite;}
+  @keyframes breath{0%{box-shadow:0 0 0 0 rgba(0,255,65,.45)}100%{box-shadow:0 0 0 22px rgba(0,255,65,0)}}
 
   #btnMain{
     width:96px;height:96px;border-radius:9999px;flex:none;position:relative;
     display:grid;place-items:center;color:#0b0e05;
     background:linear-gradient(160deg,#cbff6b,#8fe02c);transition:transform .15s ease;
-    box-shadow:0 18px 50px -12px rgba(59,130,246,.55),inset 0 2px 0 rgba(255,255,255,.5);
+    box-shadow:0 18px 50px -12px rgba(0,255,65,.55),inset 0 2px 0 rgba(255,255,255,.5);
   }
   #btnMain:active{transform:scale(.94);}
-  #btnMain::after{content:"";position:absolute;inset:-9px;border-radius:9999px;border:2px dashed rgba(59,130,246,.4);animation:spin 14s linear infinite;}
+  #btnMain::after{content:"";position:absolute;inset:-9px;border-radius:9999px;border:2px dashed rgba(0,255,65,.4);animation:spin 14s linear infinite;}
   @keyframes spin{to{transform:rotate(360deg)}}
   #btnMain.stop{background:linear-gradient(160deg,#ff7a5c,#f03c22);color:#1c0805;box-shadow:0 18px 50px -12px rgba(255,78,62,.55),inset 0 2px 0 rgba(255,255,255,.4);}
   #btnMain.stop::after{border-color:rgba(255,78,62,.5);animation-duration:4s;}
@@ -155,7 +155,7 @@
   .led{width:8px;height:8px;border-radius:99px;background:var(--safe);box-shadow:0 0 12px var(--safe);animation:blink 1.6s infinite;}
 
   /* ---- high contrast mode ---- */
-  body.hc{--safe:#60A5FA;--warn:#FFB800;--danger:#FF3B3B;--ink:#ffffff;}
+  body.hc{--safe:#39FF14;--warn:#FFB800;--danger:#FF3B3B;--ink:#ffffff;}
   body.hc #app{background:#000 !important;}
   body.hc .fade-top{background:linear-gradient(180deg,rgba(0,0,0,.95),transparent);}
   body.hc .fade-bottom{background:linear-gradient(0deg,#000 25%,transparent);}
