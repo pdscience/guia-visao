@@ -235,7 +235,7 @@
       <div id="toast" class="chip font-mono !text-[10.5px] text-white/85 !bg-[#0e1016]/90" role="status" aria-live="polite"></div>
 
       <!-- ================= INTRO ================= -->
-      <div id="intro" class="absolute inset-0 z-[90] bg-[#07080d] flex flex-col" :class="{ away: !state.introVisible }" tabindex="-1" role="dialog" aria-modal="true" style="background-image: linear-gradient(rgba(7,8,13,.75), rgba(7,8,13,.92)), url('/assets/bannerguiavisao.png'); background-size: cover; background-position: center;">
+      <div id="intro" class="absolute inset-0 z-[90] bg-[#07080d] flex flex-col" :class="{ away: !state.introVisible }" tabindex="-1" role="dialog" aria-modal="true">
         <div class="grain"></div>
         <div class="absolute -top-24 -right-24 w-72 h-72 rounded-full bg-[#9DF53C]/10 blur-[90px]"></div>
         <div class="absolute -bottom-32 -left-24 w-80 h-80 rounded-full bg-[#FF4E3E]/8 blur-[100px]"></div>
