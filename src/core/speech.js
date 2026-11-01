@@ -22,7 +22,25 @@ function escolherVoz(vs){
 function pickVoice(){
   const vs = getVoicesSafe();
   voice = escolherVoz(vs);
+  state.voiceName = voice ? voice.name : null;
   logEvent('VOZ','vozes do sistema: '+vs.length+' · escolhida: '+(voice?voice.name:'padrão'),'#8ab4ff');
+}
+
+/* sonificação: bipes curtos (sensor de ré / SOS). Contexto único, reusado. */
+let actx = null;
+function beep(freq, dur=0.09, vol=0.14, pan=0){
+  try{
+    actx = actx || new (window.AudioContext||window.webkitAudioContext)();
+    if(actx.state==='suspended') actx.resume();
+    const o=actx.createOscillator(), g=actx.createGain(), t=actx.currentTime;
+    o.type='sine'; o.frequency.value=freq;
+    g.gain.setValueAtTime(vol,t); g.gain.exponentialRampToValueAtTime(0.001,t+dur);
+    if(actx.createStereoPanner){
+      const p=actx.createStereoPanner(); p.pan.value=Math.max(-0.8,Math.min(0.8,pan));
+      o.connect(g).connect(p).connect(actx.destination);
+    } else { o.connect(g).connect(actx.destination); }
+    o.start(t); o.stop(t+dur+0.02);
+  }catch(e){}
 }
 // no Linux o catálogo pode chegar depois do load: espera as vozes antes do retry
 function esperarVozes(cb, max=1200){
@@ -114,7 +132,7 @@ function speakNow(text, retry=false){
     return;
   }
   state.voiceCount++; state.stats = state.stats || {}; state.stats.voice = state.voiceCount;
-  logEvent('VOZ', text, '#9DF53C');
+  logEvent('VOZ', text, '#00FF41');
 }
 function finishSpeak(){
   state.speakStart = 0; ttsBusy = false;
@@ -169,5 +187,5 @@ setInterval(()=>{
   }
 },1000);
 
-  return { speak, speakNow, pauseMic, resumeMic, pickVoice, getVoicesSafe };
+  return { speak, speakNow, pauseMic, resumeMic, pickVoice, getVoicesSafe, beep };
 }

@@ -3,7 +3,7 @@
 import { LABELS, RISK_BIAS, TALL, TYPES_SIM } from '../engine/labels.js';
 import { Vigia } from '../engine/vigia.js';
 import { enrich as enrichFn, phrase as phraseFn } from '../engine/risk.js';
-import { fusePersonal as fusePersonalFn } from './obstacles.js';
+import { fusePersonal as fusePersonalFn, MeuKNn, ObstDB } from './obstacles.js';
 import { raw } from './raw.js';
 
 export function createVision(state, refs, speech){
@@ -14,6 +14,8 @@ export function createVision(state, refs, speech){
   let lastInfer = 0, framesWin = 0, fpsT = performance.now();
   let lastDetTs = 0, lastSecSpoke = 0;
   let lastRaw = { n: 0, top: 'nada' };
+  let knnBusy = false, knnLast = 0;
+  const KNN_GAP = 340, PERSONAL_TTL = 2000;
 
   function resize(){
     if(!overlay || !scene) return;
@@ -36,7 +38,7 @@ export function createVision(state, refs, speech){
 
   function setRisk(level){
     state.risk = level;
-    state.riskColor = (['#9DF53C','#FFC53D','#FF4E3E'])[level] || '#9DF53C';
+    state.riskColor = (['#00FF41','#FFC53D','#FF4E3E'])[level] || '#00FF41';
     state.dangerPulse = (level === 2);
     state.alert = state.alert || {};
     state.alert.tag = (['LIVRE','ATENÇÃO','PERIGO'])[level] || 'LIVRE';
@@ -70,7 +72,7 @@ export function createVision(state, refs, speech){
     octx.stroke();
     const T = performance.now();
     for(const d of (list||[]).slice(0,5)){
-      const c = (['#9DF53C','#FFC53D','#FF4E3E'])[d.risk] || '#9DF53C';
+      const c = (['#00FF41','#FFC53D','#FF4E3E'])[d.risk] || '#00FF41';
       if(d.personal){
         const label = `${String(d.nome).toUpperCase()} · ${d.acc}%`;
         octx.font='700 12px "JetBrains Mono"';
@@ -116,6 +118,7 @@ export function createVision(state, refs, speech){
   function processFrame(list, sw, sh){
     state.lastDets = list;
     state.lastFrameTs = performance.now();
+    (state.announceReady||(()=>{}))();
     drawOverlay(list, sw, sh);
     state.detCount = (state.detCount||0) + (list||[]).length;
     const top = (list && list[0]) || null;
@@ -241,6 +244,23 @@ export function createVision(state, refs, speech){
       if(!state.running) return;
       setChip('DETECTANDO');
       requestAnimationFrame(loopLive);
+      // kNN pessoal carrega EM SEGUNDO PLANO: os pesos do MobileNet vêm da rede
+      // e nunca podem segurar o rAF do COCO (senão tudo congela até terminar)
+      void (async ()=>{
+        try{
+          // sem obstáculos cadastrados não baixa o MobileNet (~14 MB) à toa
+          const all = await ObstDB.loadAll().catch(()=>null);
+          if(all !== null && !all.some(r => r.id !== 'fundo' && (r.count||0) > 0)){ state.knnReady = false; return; }
+          await MeuKNn.init();
+          if(!state.running) return;
+          state.knnReady = true; state.knnCount = MeuKNn.count();
+          logEvent('IA','kNN pessoal pronto ('+Object.keys(state.knnCount||{}).filter(k=>k!=='fundo').length+' obstáculos)');
+        }catch(e){
+          state.knnReady = false;
+          console.warn('kNN pessoal indisponível:', e);
+          logEvent('IA','kNN pessoal indisponível ('+((e && e.message) || e)+') — detecção COCO segue normal','#FFC53D');
+        }
+      })();
     }catch(err){
       console.warn(err);
       if(!state.running) return;
@@ -251,12 +271,27 @@ export function createVision(state, refs, speech){
     }
   }
 
-  function scheduleKnn(){ /* kNN scheduling kept in controller/loop */ }
+  function scheduleKnn(){
+    if(knnBusy || !state.running || state.mode!=='live' || !state.knnOn || !state.knnReady) return;
+    const now = performance.now();
+    if(now - knnLast < KNN_GAP) return;
+    knnBusy = true; knnLast = now;
+    setTimeout(async ()=>{
+      try{
+        if(state.running && state.mode==='live' && state.knnOn && state.knnReady){
+          const src = (state.small && state.small.width) ? state.small : cam;
+          const p = await MeuKNn.predictTop(src);
+          if(p) state.personalHit = { id:p.id, conf:p.conf, ts:performance.now() };
+        }
+      }catch(e){}
+      finally{ knnBusy = false; }
+    },0);
+  }
 
   function currentPersonal(now){
     const h = state.personalHit;
     if(!h) return null;
-    if(now - h.ts > 2000){ state.personalHit = null; return null; }
+    if(now - h.ts > PERSONAL_TTL){ state.personalHit = null; return null; }
     return h;
   }
 
@@ -274,6 +309,9 @@ export function createVision(state, refs, speech){
     }
     if(cam.currentTime !== state.lastVideoTime){ state.lastVideoTime = cam.currentTime; state.lastVideoTimeAt = now; }
     if(state.noFrameSince){ state.noFrameSince = 0; if(state.noFrameWarned){ state.noFrameWarned = false; setChip('DETECTANDO'); } }
+    // agenda o kNN pessoal ANTES da inferência COCO: roda em segundo plano e
+    // nunca segura o alerta principal deste frame
+    scheduleKnn();
     if(cam.readyState>=2 && state.modelReady && !state.inferBusy && now-lastInfer>170){
       state.inferBusy = true; lastInfer = now;
       try{
@@ -335,14 +373,14 @@ export function createVision(state, refs, speech){
     sctx.fillStyle=g; sctx.fillRect(0,0,VW,VH);
     const hz = VH*0.42;
     const glow = sctx.createRadialGradient(VW/2,hz,10,VW/2,hz,VW*0.8);
-    glow.addColorStop(0,'rgba(157,245,60,.07)'); glow.addColorStop(1,'transparent');
+    glow.addColorStop(0,'rgba(0,255,65,.07)'); glow.addColorStop(1,'transparent');
     sctx.fillStyle=glow; sctx.fillRect(0,0,VW,VH);
     sctx.fillStyle='#10131b';
     for(let i=0;i<6;i++){ const bw=VW/6; sctx.fillRect(i*bw+3, hz-60-((i*37)%70), bw-6, 60+((i*37)%70)); }
     sctx.beginPath();
     sctx.moveTo(VW/2-26,hz); sctx.lineTo(VW/2+26,hz); sctx.lineTo(VW*0.94,VH); sctx.lineTo(VW*0.06,VH);
     sctx.closePath(); sctx.fillStyle='#14171d'; sctx.fill();
-    sctx.strokeStyle='rgba(157,245,60,.28)'; sctx.lineWidth=2;
+    sctx.strokeStyle='rgba(0,255,65,.28)'; sctx.lineWidth=2;
     sctx.beginPath(); sctx.moveTo(VW/2-24,hz); sctx.lineTo(VW*0.07,VH); sctx.moveTo(VW/2+24,hz); sctx.lineTo(VW*0.93,VH); sctx.stroke();
     state.roadOff = ((state.roadOff||0) + dt*0.00055)%1;
     sctx.fillStyle='rgba(255,255,255,.35)';
@@ -420,7 +458,7 @@ export function createVision(state, refs, speech){
   return {
     resize, logEvent, setRisk, setChip, roundRect, coverTransform, drawOverlay,
     enrich, phrase, processFrame, ensureModel, startLive, loopLive, onCameraLost,
-    startSim, simTick, spawnSim, simScene, simPict, scheduleKnn: ()=>{},
+    startSim, simTick, spawnSim, simScene, simPict, scheduleKnn,
     VW: ()=>VW, VH: ()=>VH,
   };
 }

@@ -4,7 +4,7 @@
     --safe:#00FF41;
     --warn:#FFC53D;
     --danger:#FF4E3E;
-    --risk:#9DF53C;
+    --risk:#00FF41;
     --ink:#eef1ea;
     --bg:#020a02;
   }
@@ -47,12 +47,12 @@
   .hud-corners span:nth-child(4){bottom:14px;right:14px;border-left:0;border-top:0;border-bottom-right-radius:8px;}
 
   .scanbeam{
-    position:absolute;left:0;right:0;height:120px;top:-140px;z-index:15;pointer-events:none;opacity:0;
+    position:absolute;left:0;right:0;height:120px;top:0;z-index:15;pointer-events:none;opacity:0;
     background:linear-gradient(180deg,transparent,rgba(0,255,65,.10) 55%,rgba(0,255,65,.30));
-    filter:blur(1px);
+    filter:blur(1px);will-change:transform;transform:translateY(-150px);
   }
   .running .scanbeam{opacity:1;animation:beam 3.2s cubic-bezier(.45,0,.35,1) infinite;}
-  @keyframes beam{0%{top:-150px}100%{top:110%}}
+  @keyframes beam{0%{transform:translateY(-150px)}100%{transform:translateY(calc(100vh + 150px))}}
 
   .riskglow{position:absolute;inset:0;z-index:25;pointer-events:none;transition:box-shadow .5s ease;box-shadow:inset 0 0 0 1.5px color-mix(in srgb,var(--risk) 55%,transparent),inset 0 0 90px -20px color-mix(in srgb,var(--risk) 40%,transparent);}
   .danger-pulse .riskglow{animation:dpulse 1s ease-in-out infinite;}
@@ -64,7 +64,7 @@
   /* ---- controls ---- */
   .ctl-secondary{
     width:60px;height:60px;border-radius:9999px;display:grid;place-items:center;flex:none;
-    background:rgba(14,16,22,.72);border:1px solid rgba(255,255,255,.14);backdrop-filter:blur(12px);
+    background:rgba(14,16,22,.72);border:1px solid rgba(255,255,255,.14);backdrop-filter:blur(8px);
     color:#cfd5cc;transition:transform .15s ease,background .3s,border-color .3s,color .3s;
   }
   .ctl-secondary:active{transform:scale(.92);}
@@ -85,7 +85,7 @@
   #btnMain.stop::after{border-color:rgba(255,78,62,.5);animation-duration:4s;}
 
   .icon-btn{width:48px;height:48px;border-radius:14px;display:grid;place-items:center;flex:none;
-    background:rgba(12,14,20,.66);border:1px solid rgba(255,255,255,.12);backdrop-filter:blur(10px);color:#c8cfc4;
+    background:rgba(12,14,20,.66);border:1px solid rgba(255,255,255,.12);backdrop-filter:blur(6px);color:#c8cfc4;
     transition:transform .15s,background .3s,color .3s;}
   .icon-btn:active{transform:scale(.9);}
   .icon-btn.on{background:var(--safe);color:#0a0d05;border-color:transparent;}
@@ -93,20 +93,22 @@
   /* ---- alert card ---- */
   #alertCard{
     display:flex;align-items:center;gap:14px;width:100%;text-align:left;
-    background:rgba(10,12,18,.78);backdrop-filter:blur(16px);
+    background:rgba(10,12,18,.86);backdrop-filter:blur(10px);
     border:1.5px solid color-mix(in srgb,var(--risk) 70%,transparent);
     border-radius:22px;padding:14px 16px;
     box-shadow:0 24px 60px -20px color-mix(in srgb,var(--risk) 45%,transparent);
     transition:border-color .4s,box-shadow .4s,transform .2s,opacity .4s;
   }
+  #alertCard{position:relative;}
   #alertCard:active{transform:scale(.985);}
+  #alertCard::after{content:"";position:absolute;inset:-2px;border-radius:24px;pointer-events:none;opacity:0;box-shadow:0 24px 80px -12px rgba(255,78,62,.75);}
   #alertCard .riskdot{background:var(--risk);transition:background .4s;}
   #riskTag{border:1.5px solid color-mix(in srgb,var(--risk) 80%,transparent);color:var(--risk);transition:all .4s;}
-  .danger-pulse #alertCard{animation:cardPulse 1s ease-in-out infinite;}
-  @keyframes cardPulse{50%{box-shadow:0 24px 80px -12px rgba(255,78,62,.75);}}
+  .danger-pulse #alertCard::after{animation:cardPulse 1s ease-in-out infinite;}
+  @keyframes cardPulse{50%{opacity:1}}
 
   .chip{display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(255,255,255,.14);border-radius:9999px;
-    padding:6px 12px;font-size:10px;letter-spacing:.14em;background:rgba(10,12,18,.6);backdrop-filter:blur(10px);}
+    padding:6px 12px;font-size:10px;letter-spacing:.14em;background:rgba(10,12,18,.72);backdrop-filter:blur(6px);}
   .chip .dot{width:7px;height:7px;border-radius:99px;background:var(--risk);transition:background .4s;}
   .running .chip .dot{animation:blink 1.4s ease-in-out infinite;}
   @keyframes blink{50%{opacity:.25}}
@@ -114,7 +116,7 @@
   /* ---- sheets ---- */
   .sheet{position:absolute;inset-inline:0;bottom:0;z-index:70;transform:translateY(105%);transition:transform .5s cubic-bezier(.32,.9,.25,1);max-height:92dvh;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;}
   .sheet.open{transform:translateY(0);}
-  #backdrop{position:absolute;inset:0;z-index:60;background:rgba(2,3,6,.6);backdrop-filter:blur(4px);opacity:0;pointer-events:none;transition:opacity .4s;}
+  #backdrop{position:absolute;inset:0;z-index:60;background:rgba(2,3,6,.7);backdrop-filter:blur(3px);opacity:0;pointer-events:none;transition:opacity .4s;}
   #backdrop.open{opacity:1;pointer-events:auto;}
 
   /* ---- switches & sliders ---- */

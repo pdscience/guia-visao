@@ -155,16 +155,22 @@ export function createController({ state, refs }){
     if(state.rgRate) state.rgRate.value = state.rate;
   }
 
+  let lastFocus = null;
   function openSheet(id){
     closeSheets();
+    if(document.activeElement && document.activeElement !== document.body) lastFocus = document.activeElement;
     state.sheet = id;
-    const el = document.getElementById(id); if(el) el.classList.add('open');
+    const el = document.getElementById(id);
+    if(el){ el.classList.add('open'); requestAnimationFrame(()=>{ try{ el.focus(); }catch(e){} }); }
     const bd = document.getElementById('backdrop'); if(bd) bd.classList.add('open');
   }
   function closeSheets(){
+    const wasOpen = !!state.sheet;
     state.sheet = null;
     document.querySelectorAll('.sheet').forEach(s=>s.classList.remove('open'));
     const bd = document.getElementById('backdrop'); if(bd) bd.classList.remove('open');
+    if(wasOpen && lastFocus && typeof lastFocus.focus === 'function'){ try{ lastFocus.focus(); }catch(e){} }
+    lastFocus = null;
   }
 
   function triggerSOS(){
@@ -196,7 +202,7 @@ export function createController({ state, refs }){
     state.alert.aria='Detecção ativa. Monitorando.';
     state.alert.dim=false;
     state.alert.icon='ok';
-    logEvent('START','detecção ativa (primeiro frame válido)','#9DF53C');
+    logEvent('START','detecção ativa (primeiro frame válido)','#00FF41');
   }
 
   function onCameraLost(reason){
@@ -298,7 +304,7 @@ export function createController({ state, refs }){
     const r = state.lastRaw || {n:0, top:'nada ainda'};
     const v = (video && video.videoWidth||0)+' por '+(video && video.videoHeight||0);
     const kp = Object.keys(state.knnCount||{}).filter(k=>k!=='fundo').length;
-    const voz = (state.voice) ? state.voice.name : 'padrão do sistema';
+    const voz = state.voiceName || 'padrão do sistema';
     const tts = !('speechSynthesis' in window) ? 'indisponível' : (state.ttsBusy ? 'ocupado' : 'livre');
     const linha = `modelo=${state.modelReady?(state.modelBase||'?'):'não carregado'} video=${v} raw=${r.n} top=${r.top} knn=${kp} tts=${tts} errVoz=${state.ttsErr||'-'} errIA=${state.inferErr||'-'} voz=${voz}`;
     speak(`Diagnóstico. Modelo ${state.modelReady?(state.modelBase||'desconhecido'):'não carregado'}. Vídeo ${v}. Análise bruta: ${r.n} detecções, melhor: ${r.top}. ${kp} obstáculos pessoais.`, true);
@@ -317,8 +323,64 @@ export function createController({ state, refs }){
     }
   }
 
+  async function setAcc(on){
+    state.acc = !!on;
+    if(!window.cocoSsd) return;
+    const antes = state.modelBase;
+    state.modelReady = false;                 // pausa a inferência durante a troca
+    vision.setChip('TROCANDO MODELO');
+    try{
+      await vision.ensureModel();
+      (state.toastFn||(()=>{}))('Modelo '+state.modelBase+' ativo');
+      if(state.running && state.mode==='live') vision.setChip('DETECTANDO');
+    }catch(err){
+      state.acc = (antes === 'mobilenet_v2');
+      state.modelReady = !!state.model;
+      (state.toastFn||(()=>{}))('Falha ao trocar modelo — mantendo o anterior');
+      logEvent('ERRO','troca de modelo falhou ('+((err && err.message) || err)+')','#FF4E3E');
+    }
+  }
+
+  async function listObstacles(){
+    const all = await ObstDB.loadAll().catch(()=>[]);
+    return (all||[]).filter(r=>r.id!=='fundo').map(r=>({ id:r.id, nome:r.nome, count:r.count }));
+  }
+  async function trainObstacle(nome, onTick){
+    const id = await startTraining(nome, video, onTick, { state, speak: speech.speak, beep: speech.beep });
+    try{ await MeuKNn.loadDataset(); state.knnReady = true; }catch(e){ state.knnReady = false; }
+    state.knnCount = MeuKNn.count();
+    return id;
+  }
+  async function deleteObstacle(id){
+    await ObstDB.remove(id);
+    delete MeuKNn.nomes[id];
+    try{ await MeuKNn.loadDataset(); state.knnReady = true; }catch(e){ state.knnReady = false; }
+    state.knnCount = MeuKNn.count();
+    state.personalHit = null;
+  }
+  function setCloudEnabled(on){ CloudVision.setEnabled(!!on); }
+  function setCloudKey(k){ CloudVision.setKey((k||'').trim()); }
+  function cloudState(){ return { enabled: CloudVision.isEnabled(), key: CloudVision.getKey() }; }
+
+  // sonificação (sensor de ré): bipes aceleram com a proximidade e p/ o lado do risco
+  setInterval(()=>{
+    if(!state.running || !state.son || !state.risk) return;
+    const interval = 1250 - (state.closeness||0)*1000;
+    if(performance.now() - (state.lastPulse||0) < interval) return;
+    state.lastPulse = performance.now();
+    try{ speech.beep(560 + (state.closeness||0)*520, 0.08, state.risk===2?0.18:0.1, state.lastPan||0); }catch(e){}
+  }, 80);
+
+  // "detecções/min": acumula e zera a cada minuto (painel de telemetria)
+  setInterval(()=>{
+    state.stats = state.stats || {};
+    state.stats.det = Math.round(state.detCount||0);
+    state.detCount = 0;
+  }, 60000);
+
   // wire vision's internal callbacks
   state.onCameraLost = onCameraLost;
+  state.announceReady = announceReady;
   // expose vision internals used by tests
   state.startLive = () => vision.startLive();
   state.stopAll = stopAll;
@@ -359,6 +421,9 @@ export function createController({ state, refs }){
     start, stopAll, describe, handleCommand, triggerSOS, setListening,
     setTorch, setRate, openSheet, closeSheets, repeatAlert, unlockAudio,
     diagnose, handleVigia, announceReady, onCameraLost,
+    speak: speech.speak, beep: speech.beep, resize: vision.resize,
+    setAcc, listObstacles, trainObstacle, deleteObstacle,
+    setCloudEnabled, setCloudKey, cloudState,
     startLive: vision.startLive, loopLive: vision.loopLive,
     startSim: vision.startSim, simTick: vision.simTick,
   };
