@@ -183,6 +183,8 @@ export function createVision(state, refs, speech){
     const base = state.acc ? 'mobilenet_v2' : 'lite_mobilenet_v2';
     if(state.modelReady && state.modelBase === base) return;
     if(!window.cocoSsd) throw new Error('tf');
+    if(window.tf && typeof window.tf.ready === 'function'){ try{ await window.tf.ready(); }catch(e){} }
+    if(window.tf && !window.tf.getBackend()){ try{ await window.tf.setBackend('webgl'); }catch(e){ try{ await window.tf.setBackend('cpu'); }catch(e2){} } }
     const m = await window.cocoSsd.load({base});
     state.model = m; state.modelBase = base; state.modelReady = true;
     logEvent('IA','modelo COCO-SSD carregado ('+base+')');
