@@ -4,6 +4,7 @@ import { LABELS, RISK_BIAS, TALL, TYPES_SIM } from '../engine/labels.js';
 import { Vigia } from '../engine/vigia.js';
 import { enrich as enrichFn, phrase as phraseFn } from '../engine/risk.js';
 import { fusePersonal as fusePersonalFn } from './obstacles.js';
+import { raw } from './raw.js';
 
 export function createVision(state, refs, speech){
   const { video: cam, overlay, scene } = refs || {};
@@ -184,23 +185,21 @@ export function createVision(state, refs, speech){
     if(state.modelReady && state.modelBase === base) return;
     if(!window.cocoSsd) throw new Error('tf');
     if(window.tf && typeof window.tf.ready === 'function'){ try{ await window.tf.ready(); }catch(e){ console.warn('tf.ready err', e); } }
-    // force cpu backend to avoid webgl clone_ failures
-    if(window.tf && typeof window.tf.setBackend === 'function'){
-      try{ await window.tf.setBackend('cpu'); await window.tf.ready(); }
-      catch(e){ console.warn('tf setBackend cpu err', e); try{ await window.tf.setBackend('webgl'); await window.tf.ready(); }catch(e2){ console.warn('tf setBackend webgl err', e2); } }
+    if(window.tf && typeof window.tf.setBackend === 'function' && !window.tf.getBackend()){
+      try{ await window.tf.setBackend('webgl'); await window.tf.ready(); }
+      catch(e){ console.warn('tf webgl err', e); try{ await window.tf.setBackend('cpu'); await window.tf.ready(); }catch(e2){ console.warn('tf cpu err', e2); } }
     }
-    console.log('tf backend:', window.tf && window.tf.getBackend && window.tf.getBackend());
     const m = await window.cocoSsd.load({base});
-    state.model = m; state.modelBase = base; state.modelReady = true;
+    state.model = raw(m); state.modelBase = base; state.modelReady = true;
     logEvent('IA','modelo COCO-SSD carregado ('+base+')');
   }
 
   async function startLive(){
     try{
-      state.stream = await navigator.mediaDevices.getUserMedia({
-        video:{ facingMode:{ideal:'environment'}, width:{ideal:1280}, height:{ideal:720} }, audio:false });
+      state.stream = raw(await navigator.mediaDevices.getUserMedia({
+        video:{ facingMode:{ideal:'environment'}, width:{ideal:1280}, height:{ideal:720} }, audio:false }));
       if(!state.running){ if(state.stream){ state.stream.getTracks().forEach(t=>t.stop()); } state.stream=null; return; }
-      state.track = state.stream.getVideoTracks()[0];
+      state.track = raw(state.stream.getVideoTracks()[0]);
       if(state.track){
         const perdeu = ()=>onCameraLost('track encerrado');
         if(typeof state.track.addEventListener === 'function') state.track.addEventListener('ended', perdeu);
@@ -214,8 +213,8 @@ export function createVision(state, refs, speech){
       try{
         const sc = Math.min(1, 640/(cam.videoWidth||1280));
         state.sw = Math.round(cam.videoWidth*sc); state.sh = Math.round(cam.videoHeight*sc);
-        state.small = document.createElement('canvas'); state.small.width = state.sw; state.small.height = state.sh;
-        state.sctx = state.small.getContext('2d', { willReadFrequently:true });
+        state.small = raw(document.createElement('canvas')); state.small.width = state.sw; state.small.height = state.sh;
+        state.sctx = raw(state.small.getContext('2d', { willReadFrequently:true }));
       }catch(e){ state.small = null; }
       state.mode='live';
       setChip('CÂMERA ATIVA');

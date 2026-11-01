@@ -6,6 +6,7 @@ import { CloudVision } from './cloud.js';
 import { Safety } from '../engine/safety.js';
 import { Vigia } from '../engine/vigia.js';
 import { LABELS } from '../engine/labels.js';
+import { raw } from './raw.js';
 
 export function createController({ state, refs }){
   const root = (refs && refs.root) || null;
@@ -55,7 +56,7 @@ export function createController({ state, refs }){
         r.onresult = e=>{ const txt = e.results[e.results.length-1][0].transcript.toLowerCase().trim(); logEvent('OUVIU', '"'+txt+'"', '#8ab4ff'); handleCommand(txt); };
         r.onerror = e=>{ if(e.error==='not-allowed'){ (state.toastFn||(()=>{}))('Permita o microfone para usar comandos de voz'); setListening(false); } };
         r.onend = ()=>{ if(state.micStop) state.micStop.finish(); if(state.listening && !state.micPaused){ setTimeout(()=>{ if(state.listening && !state.micPaused){ try{ r.start(); }catch(e){} } }, 280); } };
-        state.recog = r;
+        state.recog = raw(r);
       }
       const kick = ()=>{ try{ state.recog.start(); }catch(e){} logEvent('MIC','reconhecimento de voz ativado'); };
       if(!quiet){ speak('Escutando. Diga um comando.'); setTimeout(kick, 1500); }
@@ -168,7 +169,7 @@ export function createController({ state, refs }){
 
   function triggerSOS(){
     // unlock audio
-    try{ state.actx = state.actx || new (window.AudioContext||window.webkitAudioContext)(); if(state.actx.state==='suspended') state.actx.resume(); }catch(e){}
+    try{ state.actx = state.actx || raw(new (window.AudioContext||window.webkitAudioContext)()); if(state.actx.state==='suspended') state.actx.resume(); }catch(e){}
     (state.vibrate||(()=>{}))([300,150,300,150,500]);
     try{ speech.beep?speech.beep(880,0.15,0.18,0):null; }catch(e){}
     setTimeout(()=>{ try{ speech.beep?speech.beep(880,0.15,0.18,0):null; }catch(e){} },250);
@@ -204,7 +205,7 @@ export function createController({ state, refs }){
     (state.vibrate||(()=>{}))([250,120,250,120,450]);
     speak(Safety.cameraLostSpeech(), true);
     stopAll();
-    setChip('SEM CÂMERA');
+    vision.setChip('SEM CÂMERA');
   }
 
   async function start(mode){
@@ -238,7 +239,7 @@ export function createController({ state, refs }){
     try{
       const wl = navigator.wakeLock?.request('screen');
       if(wl && typeof wl.then === 'function'){
-        wl.then(w=>{ if(state.running) state.wake = w; else { try{ w.release(); }catch(e){} } }).catch(()=>{});
+        wl.then(w=>{ if(state.running) state.wake = raw(w); else { try{ w.release(); }catch(e){} } }).catch(()=>{});
       }
     }catch(e){}
     if(state.autoVoice && !state.listening){ setListening(true, true); }
@@ -256,7 +257,7 @@ export function createController({ state, refs }){
     if(scene){ scene.classList && scene.classList.add('opacity-0'); }
     if(overlay){ const octx = overlay.getContext('2d'); octx && octx.clearRect(0,0, (overlay.width||0), (overlay.height||0)); }
     setTorch(false,true);
-    state.risk = 0; state.riskColor = '#00FF41'; state.dangerPulse = false; setChip('PRONTO','--');
+    state.risk = 0; state.riskColor = '#00FF41'; state.dangerPulse = false; vision.setChip('PRONTO','--');
     state.idleVisible = true;
     const idle = document.getElementById('idleState'); if(idle) idle.style.display='grid';
     state.main.pressed = false;
@@ -310,7 +311,7 @@ export function createController({ state, refs }){
   }
 
   function unlockAudio(){
-    try{ state.actx = state.actx || new (window.AudioContext||window.webkitAudioContext)(); if(state.actx.state==='suspended') state.actx.resume(); }catch(e){}
+    try{ state.actx = state.actx || raw(new (window.AudioContext||window.webkitAudioContext)()); if(state.actx.state==='suspended') state.actx.resume(); }catch(e){}
     if('speechSynthesis' in window && !state.ttsBusy){
       try{ const u=new SpeechSynthesisUtterance(' '); u.volume=0; speechSynthesis.speak(u); }catch(e){}
     }
