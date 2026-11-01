@@ -183,8 +183,13 @@ export function createVision(state, refs, speech){
     const base = state.acc ? 'mobilenet_v2' : 'lite_mobilenet_v2';
     if(state.modelReady && state.modelBase === base) return;
     if(!window.cocoSsd) throw new Error('tf');
-    if(window.tf && typeof window.tf.ready === 'function'){ try{ await window.tf.ready(); }catch(e){} }
-    if(window.tf && !window.tf.getBackend()){ try{ await window.tf.setBackend('webgl'); }catch(e){ try{ await window.tf.setBackend('cpu'); }catch(e2){} } }
+    if(window.tf && typeof window.tf.ready === 'function'){ try{ await window.tf.ready(); }catch(e){ console.warn('tf.ready err', e); } }
+    // force cpu backend to avoid webgl clone_ failures
+    if(window.tf && typeof window.tf.setBackend === 'function'){
+      try{ await window.tf.setBackend('cpu'); await window.tf.ready(); }
+      catch(e){ console.warn('tf setBackend cpu err', e); try{ await window.tf.setBackend('webgl'); await window.tf.ready(); }catch(e2){ console.warn('tf setBackend webgl err', e2); } }
+    }
+    console.log('tf backend:', window.tf && window.tf.getBackend && window.tf.getBackend());
     const m = await window.cocoSsd.load({base});
     state.model = m; state.modelBase = base; state.modelReady = true;
     logEvent('IA','modelo COCO-SSD carregado ('+base+')');

@@ -256,7 +256,7 @@ export function createController({ state, refs }){
     if(scene){ scene.classList && scene.classList.add('opacity-0'); }
     if(overlay){ const octx = overlay.getContext('2d'); octx && octx.clearRect(0,0, (overlay.width||0), (overlay.height||0)); }
     setTorch(false,true);
-    setRisk(0); setChip('PRONTO','--');
+    state.risk = 0; state.riskColor = '#00FF41'; state.dangerPulse = false; setChip('PRONTO','--');
     state.idleVisible = true;
     const idle = document.getElementById('idleState'); if(idle) idle.style.display='grid';
     state.main.pressed = false;
