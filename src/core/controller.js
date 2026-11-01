@@ -374,7 +374,9 @@ export function createController({ state, refs }){
     const interval = 1250 - (state.closeness||0)*1000;
     if(performance.now() - (state.lastPulse||0) < interval) return;
     state.lastPulse = performance.now();
-    try{ speech.beep(560 + (state.closeness||0)*520, 0.08, state.risk===2?0.18:0.1, state.lastPan||0); }catch(e){}
+    const x = (state.lastPan||0) * 2.5;
+    const z = Math.max(0.6, (typeof state.lastTopDist === 'number' ? state.lastTopDist : 4) * 0.7);
+    try{ (speech.beepAt ? speech.beepAt(560 + (state.closeness||0)*520, 0.08, state.risk===2?0.18:0.1, x, z) : speech.beep(560 + (state.closeness||0)*520, 0.08, state.risk===2?0.18:0.1, state.lastPan||0)); }catch(e){}
   }, 80);
 
   // "detecções/min": acumula e zera a cada minuto (painel de telemetria)

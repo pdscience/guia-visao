@@ -5,6 +5,7 @@ import { Vigia } from '../engine/vigia.js';
 import { enrich as enrichFn, phrase as phraseFn, detectThreshold } from '../engine/risk.js';
 import { sameTarget, estimateTtc } from '../engine/tracking.js';
 import { analyzeBrightness } from '../engine/lighting.js';
+import { isGroundHazard } from '../engine/terrain.js';
 import { guidanceSpeech, alertsFor } from '../engine/guidance.js';
 import { fusePersonal as fusePersonalFn, MeuKNn, ObstDB } from './obstacles.js';
 import { raw } from './raw.js';
@@ -17,7 +18,7 @@ export function createVision(state, refs, speech){
   let lastInfer = 0, framesWin = 0, fpsT = performance.now();
   let lastDetTs = 0, lastSecSpoke = 0;
   let lastRaw = { n: 0, top: 'nada' };
-  let knnBusy = false, knnLast = 0, lightLast = 0, lastInferTime = 170;
+  let knnBusy = false, knnLast = 0, lightLast = 0, lastInferTime = 170, groundLast = 0, frameNo = 0;
   const KNN_GAP = 340, PERSONAL_TTL = 2000;
 
   function resize(){
@@ -141,6 +142,17 @@ export function createVision(state, refs, speech){
     setRisk(risk);
     state.closeness = top ? Math.min(1, top.score/0.5) : 0;
     state.lastPan = !top ? 0 : top.dir==='à esquerda' ? -0.8 : top.dir==='à direita' ? 0.8 : 0;
+    // obstáculo baixo: só quando a frente já não está bloqueada por objeto conhecido
+    frameNo++;
+    if(state.groundAuto !== false && frameNo % 5 === 0 && !top && (performance.now() - groundLast) > 4000){
+      groundLast = performance.now();
+      try{
+        if(state.sw && state.sh && state.sctx && state.small){
+          const imgd = state.sctx.getImageData(0, 0, state.sw, state.sh);
+          if(isGroundHazard(imgd, 0.22)){ speech.speak('Atenção: possível obstáculo baixo no caminho. Siga com cautela.', true); state.toastFn && state.toastFn('OBSTÁCULO BAIXO'); }
+        }
+      }catch(e){}
+    }
 
     if(top){
       lastDetTs = now; state.lastFree = false;

@@ -187,5 +187,36 @@ setInterval(()=>{
   }
 },1000);
 
+  function beepAt(freq=880, dur=0.1, vol=0.12, x=0, z=1){
+    if(!state.tts) return;
+    actx = actx || (window.AudioContext && new AudioContext()) || (window.webkitAudioContext && new webkitAudioContext());
+    if(!actx) return;
+    if(actx.state==='suspended') actx.resume().catch(()=>{});
+    try{
+      const now = actx.currentTime;
+      const osc = actx.createOscillator();
+      const gain = actx.createGain();
+      const panner = (typeof actx.createPanner === 'function') ? actx.createPanner() : null;
+      osc.type='sine';
+      osc.frequency.value = Math.max(120, freq);
+      gain.gain.setValueAtTime(Math.max(0.01, vol), now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+      osc.connect(gain);
+      if(panner){
+        panner.panningModel = 'HRTF';
+        panner.distanceModel = 'inverse';
+        panner.refDistance = 1;
+        panner.maxDistance = 20;
+        panner.rolloffFactor = 1.2;
+        panner.positionX.value = (x||0);
+        panner.positionY.value = 0;
+        panner.positionZ.value = Math.max(0.5, z||1);
+        gain.connect(panner); panner.connect(actx.destination);
+      } else { gain.connect(actx.destination); }
+      osc.start(now); osc.stop(now+dur);
+      osc.onended = ()=>{ try{osc.disconnect(); gain.disconnect(); panner&&panner.disconnect();}catch(e){} };
+    }catch(e){}
+  }
+
   return { speak, speakNow, pauseMic, resumeMic, pickVoice, getVoicesSafe, beep };
 }

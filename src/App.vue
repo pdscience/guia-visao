@@ -168,6 +168,10 @@
               <span class="switch"><input type="checkbox" :checked="state.torchAuto" @change="e=>{state.torchAuto=e.target.checked;save();}" aria-label="Ativar sugestão de lanterna automática"><span class="tr"></span><span class="th"></span></span>
             </label>
             <label class="flex items-center justify-between gap-4">
+              <span class="flex items-center gap-3"><i data-lucide="footprints" class="w-5 h-5 text-white/50"></i><span>Modo caminhada<span class="block font-mono text-[9px] tracking-[.15em] text-white/35 mt-0.5">ALERTAS CURTOS E CONTÍNUOS</span></span></span>
+              <span class="switch"><input type="checkbox" :checked="state.walkMode==='walk'" @change="e=>{state.walkMode=e.target.checked?'walk':'explore';save();}" aria-label="Ativar modo caminhada"><span class="tr"></span><span class="th"></span></span>
+            </label>
+            <label class="flex items-center justify-between gap-4">
               <span class="flex items-center gap-3"><i data-lucide="crosshair" class="w-5 h-5 text-white/50"></i><span>Precisão alta<span class="block font-mono text-[9px] tracking-[.15em] text-white/35 mt-0.5">MODELO MAIS PRECISO (MAIS LENTO)</span></span></span>
               <span class="switch"><input id="swAcc" type="checkbox" :checked="state.acc" @change="onAccChange" aria-label="Ativar modelo de precisão alta"><span class="tr"></span><span class="th"></span></span>
             </label>
@@ -328,7 +332,7 @@ const sceneRef = ref(null);
 const presets = PRESETS;
 
 const state = reactive({
-  mode:'idle', running:false, autoVoice:true, tts:true, rate:1, vib:true, son:true, sens:1, acc:false, hc:false, big:false, torchAuto:true, lowLight:false, walkMode:'walk',
+  mode:'idle', running:false, autoVoice:true, tts:true, rate:1, vib:true, son:true, sens:1, acc:false, hc:false, big:false, torchAuto:true, groundAuto:true, lowLight:false, walkMode:'walk',
   cloudOn:false, cloudKey:'',
   knnOn:true, knnReady:false, knnCount:{}, telemetry:[], alert:{title:'Detecção pausada',sub:'SEM ANÁLISE',tag:'PARADO',icon:'ok',aria:'Detecção pausada. Sem análise.',outline:'',dim:true},
   chip:{status:'PRONTO',fps:'-- FPS',offline:false}, main:{pressed:false,label:'INICIAR',stop:false},
@@ -400,9 +404,10 @@ async function trainObstacle(){
 }
 
 function applyPrefs(p){
-  for(const k of ['tts','autoVoice','vib','son','knnOn','acc','torchAuto']){ if(typeof p[k] === 'boolean') state[k] = p[k]; }
+  for(const k of ['tts','autoVoice','vib','son','knnOn','acc','torchAuto','groundAuto']){ if(typeof p[k] === 'boolean') state[k] = p[k]; }
   if(typeof p.sens === 'number' && p.sens >= 0.6 && p.sens <= 1.7) state.sens = p.sens;
   if(typeof p.torchAuto === 'boolean') state.torchAuto = p.torchAuto;
+  if(typeof p.groundAuto === 'boolean') state.groundAuto = p.groundAuto;
   if(typeof p.rate === 'number' && p.rate >= 0.6 && p.rate <= 1.5) state.rate = Math.round(p.rate * 100) / 100;
   state.hc = p.hc === true; state.big = p.big === true;
   document.body.classList.toggle('hc', state.hc);
