@@ -161,7 +161,13 @@ export function createController({ state, refs }){
     if(document.activeElement && document.activeElement !== document.body) lastFocus = document.activeElement;
     state.sheet = id;
     const el = document.getElementById(id);
-    if(el){ el.classList.add('open'); requestAnimationFrame(()=>{ try{ el.focus(); }catch(e){} }); }
+    if(el){
+      el.classList.add('open');
+      requestAnimationFrame(()=>{
+        try{ if(root) root.scrollTop = 0; }catch(e){}
+        try{ el.focus({ preventScroll: true }); }catch(e){ try{ el.focus(); }catch(_){} }
+      });
+    }
     const bd = document.getElementById('backdrop'); if(bd) bd.classList.add('open');
   }
   function closeSheets(){
@@ -169,7 +175,7 @@ export function createController({ state, refs }){
     state.sheet = null;
     document.querySelectorAll('.sheet').forEach(s=>s.classList.remove('open'));
     const bd = document.getElementById('backdrop'); if(bd) bd.classList.remove('open');
-    if(wasOpen && lastFocus && typeof lastFocus.focus === 'function'){ try{ lastFocus.focus(); }catch(e){} }
+    if(wasOpen && lastFocus && typeof lastFocus.focus === 'function'){ try{ lastFocus.focus({ preventScroll: true }); }catch(e){} }
     lastFocus = null;
   }
 
