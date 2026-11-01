@@ -53,9 +53,7 @@
       <!-- ================= HEADER ================= -->
       <header class="absolute top-0 inset-x-0 z-30 px-5 pt-[max(1.15rem,env(safe-area-inset-top))] md:pt-11 flex items-center justify-between">
         <div class="flex items-center gap-2.5">
-          <span class="w-9 h-9 rounded-xl bg-[#9DF53C] grid place-items-center text-[#0b0e05]">
-            <i data-lucide="eye" class="w-5 h-5"></i>
-          </span>
+<span class="w-9 h-9 rounded-xl grid place-items-center overflow-hidden"><img src="/assets/logoguiavisao.png" alt="Guia Visão" class="w-full h-full object-contain"></span>
           <div class="leading-none">
             <p class="font-black tracking-tight text-[15px]">GUIA VISÃO</p>
             <p class="font-mono text-[8.5px] tracking-[.3em] text-white/45 mt-1">MOBILIDADE ASSISTIVA</p>
@@ -237,14 +235,14 @@
       <div id="toast" class="chip font-mono !text-[10.5px] text-white/85 !bg-[#0e1016]/90" role="status" aria-live="polite"></div>
 
       <!-- ================= INTRO ================= -->
-      <div id="intro" class="absolute inset-0 z-[90] bg-[#07080d] flex flex-col" :class="{ away: !state.introVisible }" tabindex="-1" role="dialog" aria-modal="true">
+      <div id="intro" class="absolute inset-0 z-[90] bg-[#07080d] flex flex-col" :class="{ away: !state.introVisible }" tabindex="-1" role="dialog" aria-modal="true" style="background-image: linear-gradient(rgba(7,8,13,.75), rgba(7,8,13,.92)), url('/assets/bannerguiavisao.png'); background-size: cover; background-position: center;">
         <div class="grain"></div>
         <div class="absolute -top-24 -right-24 w-72 h-72 rounded-full bg-[#9DF53C]/10 blur-[90px]"></div>
         <div class="absolute -bottom-32 -left-24 w-80 h-80 rounded-full bg-[#FF4E3E]/8 blur-[100px]"></div>
         <div class="relative flex-1 flex flex-col justify-center px-7 pt-14">
-          <div class="monogram mb-8 rise d1">
-            <span class="absolute inset-0 grid place-items-center text-[#9DF53C]"><i data-lucide="eye" class="w-10 h-10"></i></span>
-          </div>
+<div class="monogram mb-8 rise d1 grid place-items-center overflow-hidden rounded-3xl">
+<span class="absolute inset-0 grid place-items-center"><img src="/assets/logoguiavisao.png" alt="Guia Visão" class="w-16 h-16 object-contain"></span>
+</div>
           <p class="font-mono text-[10px] tracking-[.4em] text-[#9DF53C] mb-3 rise d2">GUIA VISÃO · ASSISTENTE DE MOBILIDADE</p>
           <h2 class="text-[42px] leading-[1] font-black tracking-tight rise d3">Enxergue<br>com o som.</h2>
           <p class="mt-5 text-[15.5px] leading-relaxed text-white/60 rise d4">
