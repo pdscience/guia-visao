@@ -4,7 +4,7 @@ import { createVision } from './vision.js';
 import { ObstDB, MeuKNn, startTraining, fusePersonal, PRESETS } from './obstacles.js';
 import { CloudVision } from './cloud.js';
 import { Safety } from '../engine/safety.js';
-import { Vigia } from '../engine/vigia.js';
+import { Vigia, vigiaNorm } from '../engine/vigia.js';
 import { LABELS } from '../engine/labels.js';
 import { raw } from './raw.js';
 
@@ -99,7 +99,7 @@ export function createController({ state, refs }){
   function executeCommand(t){
     const has = (...ws) => {
       // falaTem from vigia module
-      const n = (typeof vigiaNorm !== 'undefined') ? vigiaNorm(t) : t;
+      const n = vigiaNorm(t);
       return ws.some(w => (' '+n+' ').includes(' '+w+' '));
     };
     if(has('socorro','sos','emergência','emergencia','ajuda urgente')){ triggerSOS(); }
@@ -118,7 +118,7 @@ export function createController({ state, refs }){
   }
 
   function handleVigia(t){
-    const n = (typeof vigiaNorm !== 'undefined') ? vigiaNorm(t) : t;
+    const n = vigiaNorm(t);
     if(n.includes('lista de vigilancia') || n.includes('o que estou vigiando')){
       const l = Vigia.all().map(c=>LABELS[c]||c);
       speak(l.length ? 'Na lista de vigilância: '+l.join(', ')+'.' : 'A lista de vigilância está vazia.', true);
@@ -279,7 +279,7 @@ export function createController({ state, refs }){
     if(state.timer) clearInterval(state.timer);
     state.timer = null;
     if(state.wake){ try{state.wake.release();}catch(e){} state.wake=null; }
-    state.lastDets=[]; state.stableKey=''; state.stableCount=0; state.lastPan=0; state.closeness=0; state.noFrameSince=0; state.noFrameWarned=false; state.lastFree=true; state.lastRaw={n:0,top:'nada'}; state.small=null; state.personalHit=null;
+    state.lastDets=[]; state.stableKey=''; state.stableCount=0; state.lastPan=0; state.lastTopBbox=null; state.lastTopCls=null; state.lastTopDist=null; state.lastTopTs=0; state.closeness=0; state.noFrameSince=0; state.noFrameWarned=false; state.lastFree=true; state.lastRaw={n:0,top:'nada'}; state.small=null; state.personalHit=null;
     state.readyAnnounced=false; state.lastFrameTs=0; state.lastVideoTime=0; state.lastVideoTimeAt=0;
     state.pendingCmd=null; state.pendingAt=0; state.resumeOnVisible=false;
     logEvent('STOP','detecção pausada','#FFC53D');

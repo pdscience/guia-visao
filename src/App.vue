@@ -164,6 +164,10 @@
               <span class="switch"><input id="swKNn" type="checkbox" :checked="state.knnOn" @change="onKnnChange" aria-label="Ativar meus obstáculos"><span class="tr"></span><span class="th"></span></span>
             </label>
             <label class="flex items-center justify-between gap-4">
+              <span class="flex items-center gap-3"><i data-lucide="flashlight" class="w-5 h-5 text-white/50"></i><span>Lanterna automática<span class="block font-mono text-[9px] tracking-[.15em] text-white/35 mt-0.5">SUGERE LIGAR EM AMBIENTE ESCURO</span></span></span>
+              <span class="switch"><input type="checkbox" :checked="state.torchAuto" @change="e=>{state.torchAuto=e.target.checked;save();}" aria-label="Ativar sugestão de lanterna automática"><span class="tr"></span><span class="th"></span></span>
+            </label>
+            <label class="flex items-center justify-between gap-4">
               <span class="flex items-center gap-3"><i data-lucide="crosshair" class="w-5 h-5 text-white/50"></i><span>Precisão alta<span class="block font-mono text-[9px] tracking-[.15em] text-white/35 mt-0.5">MODELO MAIS PRECISO (MAIS LENTO)</span></span></span>
               <span class="switch"><input id="swAcc" type="checkbox" :checked="state.acc" @change="onAccChange" aria-label="Ativar modelo de precisão alta"><span class="tr"></span><span class="th"></span></span>
             </label>
@@ -324,13 +328,13 @@ const sceneRef = ref(null);
 const presets = PRESETS;
 
 const state = reactive({
-  mode:'idle', running:false, autoVoice:true, tts:true, rate:1, vib:true, son:true, sens:1, acc:false, hc:false, big:false,
+  mode:'idle', running:false, autoVoice:true, tts:true, rate:1, vib:true, son:true, sens:1, acc:false, hc:false, big:false, torchAuto:true, lowLight:false, walkMode:'walk',
   cloudOn:false, cloudKey:'',
   knnOn:true, knnReady:false, knnCount:{}, telemetry:[], alert:{title:'Detecção pausada',sub:'SEM ANÁLISE',tag:'PARADO',icon:'ok',aria:'Detecção pausada. Sem análise.',outline:'',dim:true},
   chip:{status:'PRONTO',fps:'-- FPS',offline:false}, main:{pressed:false,label:'INICIAR',stop:false},
   stats:{det:0,voice:0,vib:0,time:'00:00'}, prefs:{}, liveAlert:'', liveStatus:'', idleVisible:true, introVisible:true,
   sheet:null, toast:{text:'',show:false}, runningClass:false, dangerPulse:false, lastDets:[], lastRaw:{n:0,top:'nada'},
-  personalHit:null, ttsErr:null, ttsNoVoiceLogged:false, inferErr:null, inferErrLogged:false, simItems:[], lastSpoke:0, lastVib:0, lastKey:'', stableKey:'', stableCount:0, lastPan:0, closeness:0, risk:0, noFrameSince:0, noFrameWarned:false, lastFree:true, lastFrameTs:0, lastVideoTime:0, lastVideoTimeAt:Date.now(), readyAnnounced:false, pendingCmd:null, pendingAt:0, sessionT:0, timer:null, wake:null, inferBusy:false, modelReady:false, modelBase:null, stream:null, track:null, torchOn:false, listening:false, recog:null, small:null, sctx:null, sw:0, sh:0, actx:null, voiceCount:0, vibCount:0, detCount:0, frames:0, roadOff:0, simLast:0, vibrate:(p)=>{}, toastFn:(m)=>{}, speakStart:0, micPaused:false, ttsBusy:false, ttsQueue:null, speakSeq:0, micStop:null, voice:null, voiceName:null, knnNames:{}, freeSpeech:'Nenhum obstáculo reconhecido agora. Isso não garante caminho livre; siga com cautela.', lastDetTs:Date.now(), rateVal:'1.0×', sensVal:'NORMAL', rgRate:null, rgSens:null, prefMode:'live', startedOnce:false, resumeOnVisible:false, resumeMode:'live', sosFired:false, lastTap:0, lastPulse:0, riskColor:'#00FF41',
+  personalHit:null, ttsErr:null, ttsNoVoiceLogged:false, inferErr:null, inferErrLogged:false, simItems:[], lastSpoke:0, lastVib:0, lastKey:'', stableKey:'', stableCount:0, lastPan:0, closeness:0, risk:0, noFrameSince:0, noFrameWarned:false, lastFree:true, lastFrameTs:0, lastVideoTime:0, lastVideoTimeAt:Date.now(), readyAnnounced:false, pendingCmd:null, pendingAt:0, sessionT:0, timer:null, wake:null, inferBusy:false, modelReady:false, modelBase:null, stream:null, track:null, torchOn:false, listening:false, recog:null, small:null, sctx:null, sw:0, sh:0, actx:null, voiceCount:0, vibCount:0, detCount:0, frames:0, roadOff:0, simLast:0, vibrate:(p)=>{}, toastFn:(m)=>{}, speakStart:0, micPaused:false, ttsBusy:false, ttsQueue:null, speakSeq:0, micStop:null, voice:null, voiceName:null, knnNames:{}, freeSpeech:'Nenhum obstáculo reconhecido agora. Isso não garante caminho livre; siga com cautela.', lastDetTs:Date.now(), lastTopBbox:null, lastTopCls:null, lastTopDist:null, lastTopTs:0, rateVal:'1.0×', sensVal:'NORMAL', rgRate:null, rgSens:null, prefMode:'live', startedOnce:false, resumeOnVisible:false, resumeMode:'live', sosFired:false, lastTap:0, lastPulse:0, riskColor:'#00FF41',
   myObstacles:[], myObstName:'', trainStatus:'PRONTO PARA CADASTRAR', training:false,
 });
 
@@ -396,8 +400,9 @@ async function trainObstacle(){
 }
 
 function applyPrefs(p){
-  for(const k of ['tts','autoVoice','vib','son','knnOn','acc']){ if(typeof p[k] === 'boolean') state[k] = p[k]; }
+  for(const k of ['tts','autoVoice','vib','son','knnOn','acc','torchAuto']){ if(typeof p[k] === 'boolean') state[k] = p[k]; }
   if(typeof p.sens === 'number' && p.sens >= 0.6 && p.sens <= 1.7) state.sens = p.sens;
+  if(typeof p.torchAuto === 'boolean') state.torchAuto = p.torchAuto;
   if(typeof p.rate === 'number' && p.rate >= 0.6 && p.rate <= 1.5) state.rate = Math.round(p.rate * 100) / 100;
   state.hc = p.hc === true; state.big = p.big === true;
   document.body.classList.toggle('hc', state.hc);

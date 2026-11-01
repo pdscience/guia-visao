@@ -2,7 +2,10 @@
    Portado de js/app.js (extração literal, escrita em `state` em vez de DOM). */
 import { LABELS, RISK_BIAS, TALL, TYPES_SIM } from '../engine/labels.js';
 import { Vigia } from '../engine/vigia.js';
-import { enrich as enrichFn, phrase as phraseFn } from '../engine/risk.js';
+import { enrich as enrichFn, phrase as phraseFn, detectThreshold } from '../engine/risk.js';
+import { sameTarget, estimateTtc } from '../engine/tracking.js';
+import { analyzeBrightness } from '../engine/lighting.js';
+import { guidanceSpeech, alertsFor } from '../engine/guidance.js';
 import { fusePersonal as fusePersonalFn, MeuKNn, ObstDB } from './obstacles.js';
 import { raw } from './raw.js';
 
@@ -14,7 +17,7 @@ export function createVision(state, refs, speech){
   let lastInfer = 0, framesWin = 0, fpsT = performance.now();
   let lastDetTs = 0, lastSecSpoke = 0;
   let lastRaw = { n: 0, top: 'nada' };
-  let knnBusy = false, knnLast = 0;
+  let knnBusy = false, knnLast = 0, lightLast = 0, lastInferTime = 170;
   const KNN_GAP = 340, PERSONAL_TTL = 2000;
 
   function resize(){
@@ -121,51 +124,76 @@ export function createVision(state, refs, speech){
     (state.announceReady||(()=>{}))();
     drawOverlay(list, sw, sh);
     state.detCount = (state.detCount||0) + (list||[]).length;
+    const now = performance.now();
     const top = (list && list[0]) || null;
     const isPri = top && Vigia.has(top.cls);
-    const risk = top ? top.risk : 0;
+
+    // TTC: objeto se aproximando rápido vira risco 2 mesmo com caixa pequena
+    let ttc = Infinity;
+    if(top){
+      const dt = now - (state.lastTopTs || 0);
+      if(state.lastTopCls === top.cls && state.lastTopDist != null && dt > 0 && dt <= 1500){
+        ttc = estimateTtc(state.lastTopDist, top.dist, dt);
+      }
+    }
+    const urgent = !!(top && Number.isFinite(ttc) && ttc <= 2 && top.dist <= 6);
+    const risk = urgent ? 2 : (top ? top.risk : 0);
     setRisk(risk);
     state.closeness = top ? Math.min(1, top.score/0.5) : 0;
     state.lastPan = !top ? 0 : top.dir==='à esquerda' ? -0.8 : top.dir==='à direita' ? 0.8 : 0;
-    const now = performance.now();
+
     if(top){
       lastDetTs = now; state.lastFree = false;
       state.alert = state.alert || {};
       state.alert.title = `${top.nome} ${top.dir}`;
-      state.alert.sub = `${top.risk===2?'MUITO PERTO':top.risk===1?'PERTO':'À DISTÂNCIA'} · ≈ ${String(top.dist).replace('.',',')} m · ${top.acc}%`;
+      state.alert.sub = `${risk===2?'MUITO PERTO':risk===1?'PERTO':'À DISTÂNCIA'} · ≈ ${String(top.dist).replace('.',',')} m · ${top.acc}%`;
       state.alert.aria = 'Repetir último alerta: '+(isPri?'Prioridade: ':'')+state.alert.title+'. '+state.alert.sub;
       state.alert.outline = isPri ? '2px solid #FFC53D' : '';
       state.alert.dim = false;
       state.alert.icon = (risk===0?'ok':risk===1?'warn':'danger');
-      const key = top.cls+top.dir+(top.risk>=1?top.risk:0);
-      if(key===state.stableKey){ state.stableCount = (state.stableCount||0)+1; } else { state.stableKey=key; state.stableCount=1; }
+
+      // confirma o MESMO objeto (IoU) antes de contar estabilidade
+      const prevBox = state.lastTopBbox, prevCls = state.lastTopCls;
+      const sameObj = !!(prevBox && prevCls === top.cls && sameTarget({ cls: prevCls, bbox: prevBox }, top));
+      state.lastTopBbox = top.bbox; state.lastTopCls = top.cls;
+      state.lastTopDist = top.dist; state.lastTopTs = now;
+
+      const key = top.cls+top.dir+(risk>=1?risk:0);
+      if(key===state.stableKey && (sameObj || risk>=1)){ state.stableCount = (state.stableCount||0)+1; } else { state.stableKey=key; state.stableCount=1; }
       const stable = isPri ? state.stableCount>=1 : state.stableCount>=2;
       if(!stable && key!==state.lastKey) return;
       const isNew = key!==state.lastKey;
-      if(top.risk===2){
+      const guide = guidanceSpeech(list, sw);
+      let msg = phrase(top);
+      if(urgent) msg += ' Aproximando rápido.';
+      else if(guide) msg += ' ' + guide;
+
+      if(risk===2){
         if((isNew && now-state.lastSpoke>800) || now-state.lastSpoke>5000){
           state.lastSpoke = now; state.lastKey = key;
-          speech.speak(phrase(top), true); (state.vibrate||(()=>{}))([170,90,170]);
+          speech.speak(msg, true); (state.vibrate||(()=>{}))([170,90,170]);
         } else if(isNew){ (state.vibrate||(()=>{}))([170,90,170]); }
         else if(now - state.lastVib > 1300){ state.lastVib = now; (state.vibrate||(()=>{}))([150,80,150]); }
-      } else if(top.risk===1){
+      } else if(risk===1){
         if((isNew && now-state.lastSpoke>1200) || now-state.lastSpoke>6000){
           state.lastSpoke = now; state.lastKey = key;
-          speech.speak(phrase(top), isNew); (state.vibrate||(()=>{}))(isPri?[90,60,90]:70);
+          speech.speak(msg, isNew); (state.vibrate||(()=>{}))(isPri?[90,60,90]:70);
         } else if(isNew){ (state.vibrate||(()=>{}))(isPri?[90,60,90]:70); }
       } else {
         if((isNew && now-state.lastSpoke>2000) || now-state.lastSpoke>(isPri?4000:8000)){
           state.lastSpoke = now; state.lastKey = key;
-          speech.speak(phrase(top));
+          speech.speak(msg);
           if(isPri) (state.vibrate||(()=>{}))(70);
         } else if(isPri && isNew){ (state.vibrate||(()=>{}))(70); }
       }
-      const second = (list||[]).slice(1).find(d=>Vigia.has(d.cls)) || (list||[])[1];
+      const others = alertsFor((list||[]).filter(d => d !== top), 1);
+      const second = others[0] || (list||[]).slice(1).find(d=>Vigia.has(d.cls)) || (list||[])[1];
       if(second && now-lastSecSpoke>7000 && now-state.lastSpoke>2500){
         lastSecSpoke = now;
         speech.speak(Vigia.has(second.cls) ? phrase(second) : `Atenção: ${phrase(second)}`);
       }
     } else {
+      state.lastTopBbox = null; state.lastTopCls = null; state.lastTopDist = null; state.lastTopTs = 0;
       const rawEmpty = (lastRaw||{n:0}).n===0;
       if(!state.lastFree && rawEmpty && now - lastDetTs > 7000){
         state.lastFree = true; state.lastKey=''; state.stableKey=''; state.stableCount=0;
@@ -309,24 +337,43 @@ export function createVision(state, refs, speech){
     }
     if(cam.currentTime !== state.lastVideoTime){ state.lastVideoTime = cam.currentTime; state.lastVideoTimeAt = now; }
     if(state.noFrameSince){ state.noFrameSince = 0; if(state.noFrameWarned){ state.noFrameWarned = false; setChip('DETECTANDO'); } }
+    // luminosidade: sugere lanterna em ambiente escuro (não liga sozinho)
+    if(state.torchAuto !== false && (now - lightLast) > 2500){
+      lightLast = now;
+      try{
+        if(state.sw && state.sh && state.sctx && state.small){
+          state.sctx.drawImage(cam, 0, 0, state.sw, state.sh);
+          const imgd = state.sctx.getImageData(0, 0, state.sw, state.sh);
+          const b = analyzeBrightness(imgd, 40);
+          state.lowLight = !!b.isLowLight;
+          if(b.isLowLight && !state.torchOn && !state.lowLightWarned){
+            state.lowLightWarned = true;
+            if(state.toastFn) state.toastFn('AMBIENTE ESCURO — ative a lanterna');
+            speech.speak('Ambiente escuro. Ative a lanterna para melhorar a detecção.', false);
+          } else if(!b.isLowLight){ state.lowLightWarned = false; }
+        }
+      }catch(e){}
+    }
     // agenda o kNN pessoal ANTES da inferência COCO: roda em segundo plano e
     // nunca segura o alerta principal deste frame
     scheduleKnn();
-    if(cam.readyState>=2 && state.modelReady && !state.inferBusy && now-lastInfer>170){
+    const inferGap = (lastInferTime > 220) ? 260 : 170;
+    if(cam.readyState>=2 && state.modelReady && !state.inferBusy && now-lastInfer>inferGap){
       state.inferBusy = true; lastInfer = now;
       try{
         let src = cam, sw = cam.videoWidth, sh = cam.videoHeight;
         if(state.small && state.sctx && state.sw){ state.sctx.drawImage(cam, 0, 0, state.sw, state.sh); src = state.small; sw = state.sw; sh = state.sh; }
-        const preds = await state.model.detect(src, 10, 0.35);
+        const preds = (await state.model.detect(src, 10, 0.25)).filter(p => LABELS[p.class] && p.score >= detectThreshold(p.class));
         let bt = null;
         for(const p of preds){ if(!bt || p.score>bt.score) bt = p; }
         lastRaw = { n:preds.length, top: bt ? (LABELS[bt.class]||bt.class)+' '+Math.round(bt.score*100)+'%' : 'nada' };
         state.lastRaw = lastRaw;
-        let rel = preds.filter(p=>LABELS[p.class]).map(p=>enrich(p, sw, sh)).sort((a,b)=>b.score-a.score);
+        let rel = preds.map(p=>enrich(p, sw, sh)).sort((a,b)=>b.score-a.score);
         if(state.knnOn && state.knnReady){
           try{ rel = fusePersonalFn(rel, sw, sh, currentPersonal(performance.now())); }catch(e){}
         }
         processFrame(rel, sw, sh);
+       lastInferTime = performance.now() - lastInfer;
       }catch(e){
         state.inferErr = (e && (e.message || e.name)) || String(e);
         if(!state.inferErrLogged){ state.inferErrLogged = true; logEvent('ERRO','inferência falhou: '+state.inferErr,'#FF4E3E'); }
@@ -446,6 +493,11 @@ export function createVision(state, refs, speech){
   }
 
   function onCameraLost(reason){
+    // o controller faz o teardown completo (timers, wake lock, stream, fala)
+    if(typeof state.onCameraLost === 'function' && state.onCameraLost !== onCameraLost){
+      state.onCameraLost(reason);
+      return;
+    }
     if(!state.running || state.mode !== 'live') return;
     logEvent('ERRO','câmera perdida: '+reason,'#FF4E3E');
     (state.vibrate||(()=>{}))([250,120,250,120,450]);

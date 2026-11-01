@@ -73,3 +73,28 @@ test('controller smoke: handleCommand confirm-required', async () => {
   assert.ok(speeches.some(s=>/confirmar/i.test(s)), speeches.join(' | '));
   assert.strictEqual(state.running, true);
 });
+
+test('controller: comando em maiúsculas/sem acento é reconhecido', async () => {
+  const env = await setupEnv();
+  const state = { mode:'live', running:true, pendingCmd:null, pendingAt:0, tts:true, rate:1, telemetry:[], alert:{title:'x',sub:'y',tag:'z',icon:'ok',aria:'a',outline:'',dim:false}, chip:{status:'PRONTO',fps:'-- FPS',offline:false}, main:{pressed:true,label:'PARAR',stop:true}, stats:{det:0,voice:0,vib:0,time:'00:00'}, liveAlert:'hi', vib:true, son:true, sens:1, knnOn:true, knnReady:false, knnCount:{}, lastDets:[], lastRaw:{n:0,top:'nada'}, personalHit:null, ttsErr:null, ttsNoVoiceLogged:false, inferErr:null, inferErrLogged:false, simItems:[], lastSpoke:0, lastVib:0, lastKey:'', stableKey:'', stableCount:0, lastPan:0, closeness:0, risk:0, noFrameSince:0, noFrameWarned:false, lastFree:true, lastFrameTs:0, lastVideoTime:0, lastVideoTimeAt:Date.now(), readyAnnounced:false, sessionT:0, timer:null, wake:null, inferBusy:false, modelReady:false, modelBase:null, stream:null, track:null, torchOn:false, listening:false, recog:null, small:null, sctx:null, sw:0, sh:0, actx:null, voiceCount:0, vibCount:0, detCount:0, frames:0, roadOff:0, simLast:0, vibrate:(p)=>{}, toastFn:(m)=>{}, speakStart:0, micPaused:false, ttsBusy:false, ttsQueue:null, speakSeq:0, micStop:null, voice:null, autoVoice:false, knnNames:{}, freeSpeech:'Nenhum obstáculo reconhecido agora.', prefs:{}, idleVisible:false, introVisible:false, sheet:null, toast:{text:'',show:false} };
+  const speeches=[];
+  globalThis.speechSynthesis.speak = (u) => { if(u&&u.text&&u.text.trim()) speeches.push(u.text); if(u&&u.onend) u.onend(); };
+  const refs = { root: globalThis.document.body, video: globalThis.document.body, overlay: globalThis.document.body, scene: globalThis.document.body };
+  const ctrl = env.createController({ state, refs });
+  state.toastFn = (m) => {};
+  ctrl.handleCommand('LISTA DE VIGILANCIA');
+  for(let i=0;i<5;i++){ await new Promise(r=>setTimeout(r,100)); }
+  assert.ok(speeches.some(s=>/lista de vigilância|vazia/i.test(s)), speeches.join(' | '));
+});
+
+test('vision delega perda de câmera ao controller', async () => {
+  const env = await setupEnv();
+  const state = { mode:'live', running:true, tts:false, rate:1, telemetry:[], vibrate:()=>{}, sens:1, freeSpeech:'x' };
+  let called = null;
+  state.onCameraLost = (r) => { called = r; };
+  const speech = env.createSpeech(state);
+  const refs = { root: globalThis.document.body, video: globalThis.document.body, overlay: globalThis.document.body, scene: globalThis.document.body };
+  const vision = env.createVision(state, refs, speech);
+  vision.onCameraLost('teste');
+  assert.strictEqual(called, 'teste');
+});

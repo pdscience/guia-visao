@@ -21,3 +21,14 @@ export function phrase(d){
   const prio = Vigia.has(d.cls) ? 'Prioridade: ' : '';
   return `${prio}${d.nome} ${d.dir}, ${dist}${d.risk===2?'muito perto':d.risk===1?'perto':'à distância'}.`;
 }
+
+const VEHICLES = new Set(['car','truck','bus','motorcycle','bicycle','train','boat']);
+
+// limiar de confiança por classe: veículos aparecem rápido e são perigosos,
+// então aceitamos um pouco menos de confiança; pessoa exige mais para evitar
+// disparos falsos em padrões parecidos.
+export function detectThreshold(cls){
+  if(VEHICLES.has(cls)) return 0.30;
+  if(cls === 'person') return 0.40;
+  return 0.35;
+}
