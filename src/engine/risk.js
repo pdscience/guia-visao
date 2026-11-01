@@ -8,7 +8,7 @@ export function enrich(pred, sw, sh, sensArg){
   const area = (w*h)/(sw*sh), hr = h/sh;
   let score = area*2.4*sens*(RISK_BIAS[pred.class]||1);
   if(TALL.has(pred.class)) score = Math.max(score, hr*1.05*sens*(RISK_BIAS[pred.class]||1));
-  const risk = score>=0.5 ? 2 : score>=0.18 ? 1 : 0;
+  const risk = score>=0.35 ? 2 : score>=0.10 ? 1 : 0;
   const dir = cx/sw < .4 ? 'à esquerda' : cx/sw > .6 ? 'à direita' : 'à frente';
   const base = TALL.has(pred.class) ? hr : Math.sqrt(area);
   let dist = Math.max(0.4, Math.min(9, 1.05/(base+0.03)));
@@ -28,7 +28,7 @@ const VEHICLES = new Set(['car','truck','bus','motorcycle','bicycle','train','bo
 // então aceitamos um pouco menos de confiança; pessoa exige mais para evitar
 // disparos falsos em padrões parecidos.
 export function detectThreshold(cls){
-  if(VEHICLES.has(cls)) return 0.30;
-  if(cls === 'person') return 0.40;
-  return 0.35;
+  if(VEHICLES.has(cls)) return 0.20;
+  if(cls === 'person') return 0.20;
+  return 0.20;
 }

@@ -164,15 +164,12 @@ export function createVision(state, refs, speech){
       state.alert.dim = false;
       state.alert.icon = (risk===0?'ok':risk===1?'warn':'danger');
 
-      // confirma o MESMO objeto (IoU) antes de contar estabilidade
-      const prevBox = state.lastTopBbox, prevCls = state.lastTopCls;
-      const sameObj = !!(prevBox && prevCls === top.cls && sameTarget({ cls: prevCls, bbox: prevBox }, top));
       state.lastTopBbox = top.bbox; state.lastTopCls = top.cls;
       state.lastTopDist = top.dist; state.lastTopTs = now;
 
       const key = top.cls+top.dir+(risk>=1?risk:0);
-      if(key===state.stableKey && (sameObj || risk>=1)){ state.stableCount = (state.stableCount||0)+1; } else { state.stableKey=key; state.stableCount=1; }
-      const stable = isPri ? state.stableCount>=1 : state.stableCount>=2;
+      if(key===state.stableKey){ state.stableCount = (state.stableCount||0)+1; } else { state.stableKey=key; state.stableCount=1; }
+      const stable = state.stableCount>=1;
       if(!stable && key!==state.lastKey) return;
       const isNew = key!==state.lastKey;
       const guide = guidanceSpeech(list, sw);
@@ -375,7 +372,7 @@ export function createVision(state, refs, speech){
       try{
         let src = cam, sw = cam.videoWidth, sh = cam.videoHeight;
         if(state.small && state.sctx && state.sw){ state.sctx.drawImage(cam, 0, 0, state.sw, state.sh); src = state.small; sw = state.sw; sh = state.sh; }
-        const preds = (await state.model.detect(src, 10, 0.25)).filter(p => LABELS[p.class] && p.score >= detectThreshold(p.class));
+        const preds = (await state.model.detect(src, 10, 0.20)).filter(p => LABELS[p.class] && p.score >= Math.min(0.20, detectThreshold(p.class)));
         let bt = null;
         for(const p of preds){ if(!bt || p.score>bt.score) bt = p; }
         lastRaw = { n:preds.length, top: bt ? (LABELS[bt.class]||bt.class)+' '+Math.round(bt.score*100)+'%' : 'nada' };
